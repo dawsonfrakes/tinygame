@@ -1,10 +1,12 @@
 #define true 1
 #define false 0
-#define null ((void*) 0)
+#define null (cast(void*) 0)
 #define min(X, Y) ((X) < (Y) ? (X) : (Y))
 #define max(X, Y) ((X) > (Y) ? (X) : (Y))
-#define len(X) (sizeof(X) / sizeof((X)[0]))
+#define len(X) (size_of(X) / size_of((X)[0]))
 #define str(X) {len(X) - 1, (X)}
+#define cast(T) (T)
+#define size_of(T) sizeof(T)
 
 #if TARGET_CPU_ARCH_AMD64
 typedef signed char s8;
