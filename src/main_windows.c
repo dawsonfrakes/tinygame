@@ -1,5 +1,6 @@
 /* kernel32 */
 typedef struct HINSTANCE__* HINSTANCE;
+typedef s64 (*PROC)(void);
 
 HINSTANCE GetModuleHandleW(u16*);
 void Sleep(u32);
@@ -32,6 +33,11 @@ void ExitProcess(u32);
 #define WM_SYSCOMMAND 0x0112
 #define SC_KEYMENU 0xF100
 #define GWL_STYLE (-16)
+#define HWND_TOP (cast(HWND) 0)
+#define SWP_NOSIZE 0x0001
+#define SWP_NOMOVE 0x0002
+#define SWP_NOZORDER 0x0004
+#define SWP_FRAMECHANGED 0x0020
 #define MONITOR_DEFAULTTOPRIMARY 0x00000001
 #define VK_RETURN 0x0D
 #define VK_ESCAPE 0x1B
@@ -80,6 +86,21 @@ typedef struct {
     POINT pt;
     u32 lPrivate;
 } MSG;
+typedef struct {
+    u32 length;
+    u32 flags;
+    u32 showCmd;
+    POINT ptMinPosition;
+    POINT ptMaxPosition;
+    RECT rcNormalPosition;
+    RECT rcDevice;
+} WINDOWPLACEMENT;
+typedef struct {
+  u32 cbSize;
+  RECT rcMonitor;
+  RECT rcWork;
+  u32 dwFlags;
+} MONITORINFO;
 
 s32 SetProcessDPIAware(void);
 HICON LoadIconW(HINSTANCE, u16*);
@@ -93,6 +114,61 @@ HDC GetDC(HWND);
 s64 DefWindowProcW(HWND, u32, u64, s64);
 void PostQuitMessage(s32);
 s32 DestroyWindow(HWND);
+s32 ValidateRect(HWND, RECT*);
+s64 GetWindowLongPtrW(HWND, s32);
+s64 SetWindowLongPtrW(HWND, s32, s64);
+s32 GetWindowPlacement(HWND, WINDOWPLACEMENT*);
+s32 SetWindowPlacement(HWND, WINDOWPLACEMENT*);
+HMONITOR MonitorFromWindow(HWND, u32);
+s32 GetMonitorInfoW(HMONITOR, MONITORINFO*);
+s32 SetWindowPos(HWND, HWND, s32, s32, s32, s32, u32);
+
+/* gdi32 */
+#define PFD_DOUBLEBUFFER 0x00000001
+#define PFD_DRAW_TO_WINDOW 0x00000004
+#define PFD_SUPPORT_OPENGL 0x00000020
+#define PFD_DEPTH_DONTCARE 0x20000000
+
+typedef struct {
+    u16 nSize;
+    u16 nVersion;
+    u32 dwFlags;
+    u8 iPixelType;
+    u8 cColorBits;
+    u8 cRedBits;
+    u8 cRedShift;
+    u8 cGreenBits;
+    u8 cGreenShift;
+    u8 cBlueBits;
+    u8 cBlueShift;
+    u8 cAlphaBits;
+    u8 cAlphaShift;
+    u8 cAccumBits;
+    u8 cAccumRedBits;
+    u8 cAccumGreenBits;
+    u8 cAccumBlueBits;
+    u8 cAccumAlphaBits;
+    u8 cDepthBits;
+    u8 cStencilBits;
+    u8 cAuxBuffers;
+    u8 iLayerType;
+    u8 bReserved;
+    u32 dwLayerMask;
+    u32 dwVisibleMask;
+    u32 dwDamageMask;
+} PIXELFORMATDESCRIPTOR;
+
+s32 ChoosePixelFormat(HDC, PIXELFORMATDESCRIPTOR*);
+s32 SetPixelFormat(HDC, s32, PIXELFORMATDESCRIPTOR*);
+s32 SwapBuffers(HDC);
+
+/* opengl32 */
+typedef struct HGLRC__* HGLRC;
+
+HGLRC wglCreateContext(HDC);
+s32 wglDeleteContext(HGLRC);
+s32 wglMakeCurrent(HDC, HGLRC);
+PROC wglGetProcAddress(u8*);
 
 /* dwmapi */
 typedef enum {
@@ -126,11 +202,37 @@ static void update_cursor_clip(void) {
 }
 
 static void toggle_fullscreen(void) {
+    static WINDOWPLACEMENT save_placement = {size_of(WINDOWPLACEMENT)};
 
+    u32 style = cast(u32) GetWindowLongPtrW(platform_hwnd, GWL_STYLE);
+    if (style & WS_OVERLAPPEDWINDOW) {
+        MONITORINFO mi = {size_of(MONITORINFO)};
+        GetMonitorInfoW(MonitorFromWindow(platform_hwnd, MONITOR_DEFAULTTOPRIMARY), &mi);
+
+        GetWindowPlacement(platform_hwnd, &save_placement);
+        SetWindowLongPtrW(platform_hwnd, GWL_STYLE, style & ~WS_OVERLAPPEDWINDOW);
+        SetWindowPos(platform_hwnd, HWND_TOP,
+            mi.rcMonitor.left, mi.rcMonitor.top,
+            mi.rcMonitor.right - mi.rcMonitor.left,
+            mi.rcMonitor.bottom - mi.rcMonitor.top,
+            SWP_FRAMECHANGED);
+    } else {
+        SetWindowLongPtrW(platform_hwnd, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
+        SetWindowPlacement(platform_hwnd, &save_placement);
+        SetWindowPos(platform_hwnd, null, 0, 0, 0, 0, SWP_NOSIZE |
+            SWP_NOMOVE | SWP_NOZORDER | SWP_FRAMECHANGED);
+    }
 }
 
 static s64 window_proc(HWND hwnd, u32 message, u64 wParam, s64 lParam) {
     switch (message) {
+    case WM_PAINT: {
+        ValidateRect(hwnd, null);
+        return 0;
+    }
+    case WM_ERASEBKGND: {
+        return 1;
+    }
     case WM_ACTIVATEAPP: {
         if (wParam != 0) update_cursor_clip();
         return 0;
@@ -161,6 +263,7 @@ static s64 window_proc(HWND hwnd, u32 message, u64 wParam, s64 lParam) {
         return 0;
     }
     default: {
+        if (message == WM_SYSCOMMAND && wParam == SC_KEYMENU) return 0;
         return DefWindowProcW(hwnd, message, wParam, lParam);
     }
     }
