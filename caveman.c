@@ -372,6 +372,11 @@ int _fltused;
 
 #if RENDERER_OPENGL
 /* 1.0 */
+#define GL_COLOR_BUFFER_BIT 0x00004000
+#define GL_COLOR 0x1800
+#define GL_DEPTH 0x1801
+#define GL_NEAREST 0x2600
+
 #define GL10_FUNCTIONS \
     X(void, glEnable, u32) \
     X(void, glDisable, u32) \
@@ -382,12 +387,30 @@ int _fltused;
     X(void, glClear, u32)
 
 /* 3.0 */
+#define GL_RGBA16F 0x881A
+#define GL_DEPTH_COMPONENT32F 0x8CAC
+#define GL_COLOR_ATTACHMENT0 0x8CE0
+#define GL_DEPTH_ATTACHMENT 0x8D00
 #define GL_FRAMEBUFFER 0x8D40
 #define GL_RENDERBUFFER 0x8D41
+#define GL_FRAMEBUFFER_SRGB 0x8DB9
 
 #define GL30_FUNCTIONS \
     X(void, glBindFramebuffer, u32, u32) \
     X(void, glBindVertexArray, u32)
+
+/* 3.2 */
+#define GL_MAX_COLOR_TEXTURE_SAMPLES 0x910E
+#define GL_MAX_DEPTH_TEXTURE_SAMPLES 0x910F
+
+/* 4.5 */
+#define GL45_FUNCTIONS \
+    X(void, glCreateFramebuffers, u32, u32*) \
+    X(void, glNamedFramebufferRenderbuffer, u32, u32, u32, u32) \
+    X(void, glClearNamedFramebufferfv, u32, u32, s32, float32*) \
+    X(void, glBlitNamedFramebuffer, u32, u32, s32, s32, s32, s32, s32, s32, s32, s32, u32, u32) \
+    X(void, glCreateRenderbuffers, u32, u32*) \
+    X(void, glNamedRenderbufferStorageMultisample, u32, u32, u32, u32, u32)
 
 #if TARGET_OS_WINDOWS
 #define WGL_CONTEXT_MAJOR_VERSION_ARB 0x2091
@@ -404,6 +427,7 @@ GL10_FUNCTIONS
 static HGLRC opengl_ctx;
 #define X(RET, NAME, ...) static RET (*NAME)(__VA_ARGS__);
 GL30_FUNCTIONS
+GL45_FUNCTIONS
 #undef X
 
 static void opengl_platform_init(void) {
@@ -421,7 +445,7 @@ static void opengl_platform_init(void) {
 
     HGLRC (*wglCreateContextAttribsARB)(HDC, HGLRC, s32*) =
         cast(HGLRC (*)(HDC, HGLRC, s32*))
-        wglGetProcAddress("wglCreateContextAttribsARB");
+        wglGetProcAddress(cast(u8*) "wglCreateContextAttribsARB");
 
     s32 attribs[] = {
         WGL_CONTEXT_MAJOR_VERSION_ARB, 4,
@@ -435,8 +459,9 @@ static void opengl_platform_init(void) {
 
     wglDeleteContext(temp_ctx);
 
-#define X(RET, NAME, ...) NAME = cast(RET (*)(__VA_ARGS__)) wglGetProcAddress(#NAME);
+#define X(RET, NAME, ...) NAME = cast(RET (*)(__VA_ARGS__)) wglGetProcAddress(cast(u8*) #NAME);
     GL30_FUNCTIONS
+    GL45_FUNCTIONS
 #undef X
 }
 
@@ -450,8 +475,16 @@ static void opengl_platform_present(void) {
 }
 #endif
 
+static u32 opengl_main_fbo;
+static u32 opengl_main_fbo_color0;
+static u32 opengl_main_fbo_depth;
+
 static void opengl_init(void) {
     opengl_platform_init();
+
+    glCreateFramebuffers(1, &opengl_main_fbo);
+    glCreateRenderbuffers(1, &opengl_main_fbo_color0);
+    glCreateRenderbuffers(1, &opengl_main_fbo_depth);
 }
 
 static void opengl_deinit(void) {
@@ -459,15 +492,42 @@ static void opengl_deinit(void) {
 }
 
 static void opengl_resize(void) {
+    s32 fbo_max_color_samples;
+    glGetIntegerv(GL_MAX_COLOR_TEXTURE_SAMPLES, &fbo_max_color_samples);
+    s32 fbo_max_depth_samples;
+    glGetIntegerv(GL_MAX_DEPTH_TEXTURE_SAMPLES, &fbo_max_depth_samples);
+    u32 fbo_samples = cast(u32) min(fbo_max_color_samples, fbo_max_depth_samples);
 
+    glNamedRenderbufferStorageMultisample(opengl_main_fbo_color0, fbo_samples,
+        GL_RGBA16F, platform_screen_width, platform_screen_height);
+    glNamedFramebufferRenderbuffer(opengl_main_fbo, GL_COLOR_ATTACHMENT0,
+        GL_RENDERBUFFER, opengl_main_fbo_color0);
+
+    glNamedRenderbufferStorageMultisample(opengl_main_fbo_depth, fbo_samples,
+        GL_DEPTH_COMPONENT32F, platform_screen_width, platform_screen_height);
+    glNamedFramebufferRenderbuffer(opengl_main_fbo, GL_DEPTH_ATTACHMENT,
+        GL_RENDERBUFFER, opengl_main_fbo_depth);
 }
 
 static void opengl_present(void) {
+    float32 clear_color0[4] = {0.6f, 0.2f, 0.2f, 1.0f};
+    float32 clear_depth = 0.0f;
+    glClearNamedFramebufferfv(opengl_main_fbo, GL_COLOR, 0, clear_color0);
+    glClearNamedFramebufferfv(opengl_main_fbo, GL_DEPTH, 0, &clear_depth);
+    glBindFramebuffer(GL_FRAMEBUFFER, opengl_main_fbo);
+
     glViewport(0, 0, platform_screen_width, platform_screen_height);
 
-    // note(dfra): fix intel default framebuffer resize bug
+    // note(dfra): fix for intel default framebuffer resize bug
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glClear(0);
+
+    glEnable(GL_FRAMEBUFFER_SRGB);
+    glBlitNamedFramebuffer(opengl_main_fbo, 0,
+        0, 0, platform_screen_width, platform_screen_height,
+        0, 0, platform_screen_width, platform_screen_height,
+        GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glDisable(GL_FRAMEBUFFER_SRGB);
 
     opengl_platform_present();
 }
