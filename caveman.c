@@ -1,3 +1,48 @@
+#define TARGET_CPU_ARCH_AMD64 1
+#define TARGET_OS_WINDOWS 1
+#define RENDERER_OPENGL 1
+#define DEVELOPER 1
+
+#define true 1
+#define false 0
+#define null (cast(void*) 0)
+
+#define size_of(T) sizeof(T)
+#define offset_of(T, F) ((u64) &(cast(T*) 0)->F)
+#define cast(T) (T)
+#define len(X) (size_of(X) / size_of((X)[0]))
+#define str(X) (cast(string) {len(X) - 1, (X)})
+#define min(X, Y) ((X) < (Y) ? (X) : (Y))
+#define max(X, Y) ((X) > (Y) ? (X) : (Y))
+
+typedef signed char s8;
+typedef short s16;
+typedef int s32;
+typedef long long s64;
+
+typedef unsigned char u8;
+typedef unsigned short u16;
+typedef unsigned int u32;
+typedef unsigned long long u64;
+
+typedef float float32;
+typedef double float64;
+
+typedef u8 bool;
+
+typedef struct {
+    u64 count;
+    u8* data;
+} string;
+
+#if RENDERER_OPENGL
+static void opengl_init(void);
+static void opengl_deinit(void);
+static void opengl_resize(void);
+static void opengl_present(void);
+#endif
+
+#if TARGET_OS_WINDOWS
 /* kernel32 */
 typedef struct HINSTANCE__* HINSTANCE;
 typedef s64 (*PROC)(void);
@@ -47,8 +92,8 @@ void ExitProcess(u32);
 
 typedef struct HDC__* HDC;
 typedef struct HWND__* HWND;
-typedef struct HMENU__* HMENU;
 typedef struct HICON__* HICON;
+typedef struct HMENU__* HMENU;
 typedef struct HBRUSH__* HBRUSH;
 typedef struct HCURSOR__* HCURSOR;
 typedef struct HMONITOR__* HMONITOR;
@@ -113,8 +158,8 @@ s64 DispatchMessageW(MSG*);
 HDC GetDC(HWND);
 s64 DefWindowProcW(HWND, u32, u64, s64);
 void PostQuitMessage(s32);
-s32 DestroyWindow(HWND);
 s32 ValidateRect(HWND, RECT*);
+s32 DestroyWindow(HWND);
 s64 GetWindowLongPtrW(HWND, s32);
 s64 SetWindowLongPtrW(HWND, s32, s64);
 s32 GetWindowPlacement(HWND, WINDOWPLACEMENT*);
@@ -171,31 +216,20 @@ s32 wglMakeCurrent(HDC, HGLRC);
 PROC wglGetProcAddress(u8*);
 
 /* dwmapi */
-typedef enum {
-    DWMWA_USE_IMMERSIVE_DARK_MODE = 20,
-    DWMWA_WINDOW_CORNER_PREFERENCE = 33,
-} DWMWINDOWATTRIBUTE;
-typedef enum {
-    DWMWCP_DEFAULT = 0,
-    DWMWCP_DONOTROUND = 1,
-    DWMWCP_ROUND = 2,
-    DWMWCP_ROUNDSMALL = 3,
-} DWM_WINDOW_CORNER_PREFERENCE;
-
-u32 DwmSetWindowAttribute(HWND, u32, void*, u32);
+#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#define DWMWA_WINDOW_CORNER_PREFERENCE 33
+#define DWMWCP_DONOTROUND 1
 
 /* winmm */
 u32 timeBeginPeriod(u32);
+
+u32 DwmSetWindowAttribute(HWND, u32, void*, u32);
 
 static HINSTANCE platform_hinstance;
 static HWND platform_hwnd;
 static HDC platform_hdc;
 static u16 platform_screen_width;
 static u16 platform_screen_height;
-
-#if RENDERER_OPENGL
-#include "opengl.c"
-#endif
 
 static void update_cursor_clip(void) {
 
@@ -210,7 +244,7 @@ static void toggle_fullscreen(void) {
         GetMonitorInfoW(MonitorFromWindow(platform_hwnd, MONITOR_DEFAULTTOPRIMARY), &mi);
 
         GetWindowPlacement(platform_hwnd, &save_placement);
-        SetWindowLongPtrW(platform_hwnd, GWL_STYLE, style & ~WS_OVERLAPPEDWINDOW);
+        SetWindowLongPtrW(platform_hwnd, GWL_STYLE, style & ~cast(u32) WS_OVERLAPPEDWINDOW);
         SetWindowPos(platform_hwnd, HWND_TOP,
             mi.rcMonitor.left, mi.rcMonitor.top,
             mi.rcMonitor.right - mi.rcMonitor.left,
@@ -226,46 +260,46 @@ static void toggle_fullscreen(void) {
 
 static s64 window_proc(HWND hwnd, u32 message, u64 wParam, s64 lParam) {
     switch (message) {
-    case WM_PAINT: {
-        ValidateRect(hwnd, null);
-        return 0;
-    }
-    case WM_ERASEBKGND: {
-        return 1;
-    }
-    case WM_ACTIVATEAPP: {
-        if (wParam != 0) update_cursor_clip();
-        return 0;
-    }
-    case WM_SIZE: {
-        platform_screen_width = cast(u16) cast(u64) lParam;
-        platform_screen_height = cast(u16) (cast(u64) lParam >> 16);
+        case WM_PAINT: {
+            ValidateRect(hwnd, null);
+            return 0;
+        }
+        case WM_ERASEBKGND: {
+            return 1;
+        }
+        case WM_ACTIVATEAPP: {
+            if (wParam != 0) update_cursor_clip();
+            return 0;
+        }
+        case WM_SIZE: {
+            platform_screen_width = cast(u16) cast(u64) lParam;
+            platform_screen_height = cast(u16) (cast(u64) lParam >> 16);
 
-        opengl_resize();
-        return 0;
-    }
-    case WM_CREATE: {
-        platform_hwnd = hwnd;
-        platform_hdc = GetDC(hwnd);
+            opengl_resize();
+            return 0;
+        }
+        case WM_CREATE: {
+            platform_hwnd = hwnd;
+            platform_hdc = GetDC(hwnd);
 
-        u32 dark_mode = 1;
-        DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark_mode, 4);
-        u32 round_mode = DWMWCP_DONOTROUND;
-        DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &round_mode, 4);
+            s32 dark_mode = true;
+            DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark_mode, 4);
+            s32 round_mode = DWMWCP_DONOTROUND;
+            DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &round_mode, 4);
 
-        opengl_init();
-        return 0;
-    }
-    case WM_DESTROY: {
-        opengl_deinit();
+            opengl_init();
+            return 0;
+        }
+        case WM_DESTROY: {
+            opengl_deinit();
 
-        PostQuitMessage(0);
-        return 0;
-    }
-    default: {
-        if (message == WM_SYSCOMMAND && wParam == SC_KEYMENU) return 0;
-        return DefWindowProcW(hwnd, message, wParam, lParam);
-    }
+            PostQuitMessage(0);
+            return 0;
+        }
+        default: {
+            if (message == WM_SYSCOMMAND && wParam == SC_KEYMENU) return 0;
+            return DefWindowProcW(hwnd, message, wParam, lParam);
+        }
     }
 }
 
@@ -284,7 +318,7 @@ void WinMainCRTStartup(void) {
     wndclass.hCursor = LoadCursorW(null, IDC_CROSS);
     wndclass.lpszClassName = L"A";
     RegisterClassExW(&wndclass);
-    CreateWindowExW(0, wndclass.lpszClassName, L"CAVEMAN",
+    CreateWindowExW(0, wndclass.lpszClassName, L"Caveman Goes Ooga Booga",
         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
         CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
         null, null, platform_hinstance, null);
@@ -294,30 +328,31 @@ void WinMainCRTStartup(void) {
         while (PeekMessageW(&msg, null, 0, 0, PM_REMOVE)) {
             TranslateMessage(&msg);
             switch (msg.message) {
-            case WM_KEYDOWN:
-            case WM_KEYUP:
-            case WM_SYSKEYDOWN:
-            case WM_SYSKEYUP: {
-                bool pressed = (cast(u64) msg.lParam & cast(u64) 1 << 31) == 0;
-                bool repeat = pressed && (cast(u64) msg.lParam & cast(u64) 1 << 30) != 0;
-                bool sys = msg.message == WM_SYSKEYDOWN || msg.message == WM_SYSKEYUP;
-                bool alt = sys && (cast(u64) msg.lParam & cast(u64) 1 << 29) != 0;
+                case WM_KEYDOWN:
+                case WM_KEYUP:
+                case WM_SYSKEYDOWN:
+                case WM_SYSKEYUP: {
+                    bool pressed = (cast(u64) msg.lParam & cast(u64) 1 << 31) == 0;
+                    bool repeat = pressed && (cast(u64) msg.lParam & cast(u64) 1 << 30) != 0;
+                    bool sys = msg.message == WM_SYSKEYDOWN || msg.message == WM_SYSKEYUP;
+                    bool alt = sys && (cast(u64) msg.lParam & cast(u64) 1 << 29) != 0;
 
-                if (!repeat && (!sys || alt || msg.wParam == VK_F10)) {
-                    if (pressed) {
-                        if (msg.wParam == VK_F4 && alt) DestroyWindow(platform_hwnd);
-                        if (DEVELOPER && msg.wParam == VK_ESCAPE) DestroyWindow(platform_hwnd);
-                        if (msg.wParam == VK_F11 || (msg.wParam == VK_RETURN && alt)) toggle_fullscreen();
+                    if (!repeat && (!sys || alt || msg.wParam == VK_F10)) {
+                        if (pressed) {
+                            if (msg.wParam == VK_F4 && alt) DestroyWindow(platform_hwnd);
+                            if (msg.wParam == VK_F11 || (msg.wParam == VK_RETURN && alt)) toggle_fullscreen();
+                            if (DEVELOPER && msg.wParam == VK_ESCAPE) DestroyWindow(platform_hwnd);
+                        }
                     }
+                    break;
                 }
-                break;
-            }
-            case WM_QUIT: {
-                goto game_loop_end;
-            }
-            default: {
-                DispatchMessageW(&msg);
-            }
+                case WM_QUIT: {
+                    goto game_loop_end;
+                }
+                default: {
+                    DispatchMessageW(&msg);
+                    break;
+                }
             }
         }
 
@@ -331,3 +366,109 @@ game_loop_end:
 
     ExitProcess(0);
 }
+
+int _fltused;
+#endif
+
+#if RENDERER_OPENGL
+/* 1.0 */
+#define GL10_FUNCTIONS \
+    X(void, glEnable, u32) \
+    X(void, glDisable, u32) \
+    X(void, glGetIntegerv, u32, s32*) \
+    X(void, glDepthFunc, u32) \
+    X(void, glBlendFunc, u32, u32) \
+    X(void, glViewport, s32, s32, u32, u32) \
+    X(void, glClear, u32)
+
+/* 3.0 */
+#define GL_FRAMEBUFFER 0x8D40
+#define GL_RENDERBUFFER 0x8D41
+
+#define GL30_FUNCTIONS \
+    X(void, glBindFramebuffer, u32, u32) \
+    X(void, glBindVertexArray, u32)
+
+#if TARGET_OS_WINDOWS
+#define WGL_CONTEXT_MAJOR_VERSION_ARB 0x2091
+#define WGL_CONTEXT_MINOR_VERSION_ARB 0x2092
+#define WGL_CONTEXT_FLAGS_ARB 0x2094
+#define WGL_CONTEXT_PROFILE_MASK_ARB 0x9126
+#define WGL_CONTEXT_DEBUG_BIT_ARB 0x0001
+#define WGL_CONTEXT_CORE_PROFILE_BIT_ARB 0x00000001
+
+#define X(RET, NAME, ...) RET NAME(__VA_ARGS__);
+GL10_FUNCTIONS
+#undef X
+
+static HGLRC opengl_ctx;
+#define X(RET, NAME, ...) static RET (*NAME)(__VA_ARGS__);
+GL30_FUNCTIONS
+#undef X
+
+static void opengl_platform_init(void) {
+    PIXELFORMATDESCRIPTOR pfd = {0};
+    pfd.nSize = size_of(PIXELFORMATDESCRIPTOR);
+    pfd.nVersion = 1;
+    pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL |
+        PFD_DOUBLEBUFFER | PFD_DEPTH_DONTCARE;
+    pfd.cColorBits = 24;
+    s32 format = ChoosePixelFormat(platform_hdc, &pfd);
+    SetPixelFormat(platform_hdc, format, &pfd);
+
+    HGLRC temp_ctx = wglCreateContext(platform_hdc);
+    wglMakeCurrent(platform_hdc, temp_ctx);
+
+    HGLRC (*wglCreateContextAttribsARB)(HDC, HGLRC, s32*) =
+        cast(HGLRC (*)(HDC, HGLRC, s32*))
+        wglGetProcAddress("wglCreateContextAttribsARB");
+
+    s32 attribs[] = {
+        WGL_CONTEXT_MAJOR_VERSION_ARB, 4,
+        WGL_CONTEXT_MINOR_VERSION_ARB, 6,
+        WGL_CONTEXT_FLAGS_ARB, WGL_CONTEXT_DEBUG_BIT_ARB,
+        WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+        0,
+    };
+    opengl_ctx = wglCreateContextAttribsARB(platform_hdc, null, attribs);
+    wglMakeCurrent(platform_hdc, opengl_ctx);
+
+    wglDeleteContext(temp_ctx);
+
+#define X(RET, NAME, ...) NAME = cast(RET (*)(__VA_ARGS__)) wglGetProcAddress(#NAME);
+    GL30_FUNCTIONS
+#undef X
+}
+
+static void opengl_platform_deinit(void) {
+    if (opengl_ctx) wglDeleteContext(opengl_ctx);
+    opengl_ctx = null;
+}
+
+static void opengl_platform_present(void) {
+    SwapBuffers(platform_hdc);
+}
+#endif
+
+static void opengl_init(void) {
+    opengl_platform_init();
+}
+
+static void opengl_deinit(void) {
+    opengl_platform_deinit();
+}
+
+static void opengl_resize(void) {
+
+}
+
+static void opengl_present(void) {
+    glViewport(0, 0, platform_screen_width, platform_screen_height);
+
+    // note(dfra): fix intel default framebuffer resize bug
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glClear(0);
+
+    opengl_platform_present();
+}
+#endif
