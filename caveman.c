@@ -531,9 +531,9 @@ static u32 opengl_main_fbo_color0;
 static u32 opengl_main_fbo_depth;
 
 static float32 triangle_vertices[] = {
-    -0.5f, -0.5f, +0.0f,
-    +0.5f, -0.5f, +0.0f,
-    +0.0f, +0.5f, +0.0f,
+    -0.5f, -0.5f, +0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+    +0.5f, -0.5f, +0.0f, 0.0f, 1.0f, 0.0f, 1.0f,
+    +0.0f, +0.5f, +0.0f, 0.0f, 0.0f, 1.0f, 1.0f,
 };
 
 static u32 opengl_triangle_vao;
@@ -570,16 +570,21 @@ static void opengl_init(void) {
 
     u32 triangles_vbo;
     glCreateBuffers(1, &triangles_vbo);
-    glNamedBufferData(triangles_vbo, size_of(float32) * 9, triangle_vertices, GL_STATIC_DRAW);
+    glNamedBufferData(triangles_vbo, size_of(float32) * 21, triangle_vertices, GL_STATIC_DRAW);
 
     glCreateVertexArrays(1, &opengl_triangle_vao);
     u32 vbo_binding = 0;
-    glVertexArrayVertexBuffer(opengl_triangle_vao, vbo_binding, triangles_vbo, 0, size_of(float32) * 3);
+    glVertexArrayVertexBuffer(opengl_triangle_vao, vbo_binding, triangles_vbo, 0, size_of(float32) * 7);
 
     u32 position_attrib = 0;
     glEnableVertexArrayAttrib(opengl_triangle_vao, position_attrib);
     glVertexArrayAttribBinding(opengl_triangle_vao, position_attrib, vbo_binding);
     glVertexArrayAttribFormat(opengl_triangle_vao, position_attrib, 3, GL_FLOAT, false, 0);
+
+    u32 color_attrib = 1;
+    glEnableVertexArrayAttrib(opengl_triangle_vao, color_attrib);
+    glVertexArrayAttribBinding(opengl_triangle_vao, color_attrib, vbo_binding);
+    glVertexArrayAttribFormat(opengl_triangle_vao, color_attrib, 4, GL_FLOAT, false, size_of(float32) * 3);
 
     u32 vshader = glCreateShader(GL_VERTEX_SHADER);
     string vsrc = platform_read_entire_file("res/shaders/opengl_triangle.vert");
