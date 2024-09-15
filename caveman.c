@@ -495,7 +495,8 @@ int _fltused;
     X(void, glTextureStorage2D, u32, u32, u32, u32, u32) \
     X(void, glTextureSubImage2D, u32, s32, s32, s32, u32, u32, u32, u32, void*) \
     X(void, glTextureParameteri, u32, u32, s32) \
-    X(void, glBindTextureUnit, u32, u32)
+    X(void, glBindTextureUnit, u32, u32) \
+    X(void, glProgramUniformMatrix4fv, u32, s32, u32, bool, float32*)
 
 #if TARGET_OS_WINDOWS
 #define WGL_CONTEXT_MAJOR_VERSION_ARB 0x2091
@@ -700,7 +701,17 @@ static void opengl_present(void) {
 
     glViewport(0, 0, platform_screen_width, platform_screen_height);
 
+    float32 aspect_ratio = cast(float32) platform_screen_width / cast(float32) platform_screen_height;
+    float32 transform[16] = {
+        1.0f / aspect_ratio, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 1.0f,
+    };
+
     glUseProgram(opengl_triangle_shader);
+    s32 u_transform = 0;
+    glProgramUniformMatrix4fv(opengl_triangle_shader, u_transform, 1, false, transform);
     glBindVertexArray(opengl_triangle_vao);
     glBindTextureUnit(0, opengl_triangle_parabola_texture);
     glDrawArrays(GL_TRIANGLES, 0, len(triangle_vertices));
