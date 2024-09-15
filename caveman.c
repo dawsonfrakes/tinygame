@@ -44,10 +44,26 @@ static void opengl_present(void);
 
 #if TARGET_OS_WINDOWS
 /* kernel32 */
+#define GENERIC_READ 0x80000000
+#define OPEN_EXISTING 3
+#define FILE_ATTRIBUTE_NORMAL 0x80
+#define INVALID_HANDLE_VALUE (cast(HANDLE) -1)
+#define MEM_COMMIT 0x00001000
+#define MEM_RESERVE 0x00002000
+#define MEM_RELEASE 0x00008000
+#define PAGE_READWRITE 0x04
+
+typedef void* HANDLE;
 typedef struct HINSTANCE__* HINSTANCE;
 typedef s64 (*PROC)(void);
 
 HINSTANCE GetModuleHandleW(u16*);
+HANDLE CreateFileA(u8*, u32, u32, void*, u32, u32, HANDLE);
+s32 CloseHandle(HANDLE);
+s32 GetFileSizeEx(HANDLE, u64*);
+s32 ReadFile(HANDLE, void*, u32, u32*, void*);
+void* VirtualAlloc(void*, u64, u32, u32);
+s32 VirtualFree(void*, u64, u32);
 void Sleep(u32);
 void ExitProcess(u32);
 
@@ -373,6 +389,8 @@ int _fltused;
 #if RENDERER_OPENGL
 /* 1.0 */
 #define GL_COLOR_BUFFER_BIT 0x00004000
+#define GL_TRIANGLES 0x0004
+#define GL_FLOAT 0x1406
 #define GL_COLOR 0x1800
 #define GL_DEPTH 0x1801
 #define GL_NEAREST 0x2600
@@ -384,7 +402,28 @@ int _fltused;
     X(void, glDepthFunc, u32) \
     X(void, glBlendFunc, u32, u32) \
     X(void, glViewport, s32, s32, u32, u32) \
-    X(void, glClear, u32)
+    X(void, glClear, u32) \
+    X(void, glDrawArrays, u32, s32, u32)
+
+/* 1.5 */
+#define GL_STREAM_DRAW 0x88E0
+#define GL_STATIC_DRAW 0x88E4
+
+/* 2.0 */
+#define GL_FRAGMENT_SHADER 0x8B30
+#define GL_VERTEX_SHADER 0x8B31
+#define GL_LOWER_LEFT 0x8CA1
+
+#define GL20_FUNCTIONS \
+    X(u32, glCreateProgram, void) \
+    X(void, glAttachShader, u32, u32) \
+    X(void, glDetachShader, u32, u32) \
+    X(void, glLinkProgram, u32) \
+    X(void, glUseProgram, u32) \
+    X(u32, glCreateShader, u32) \
+    X(void, glDeleteShader, u32) \
+    X(void, glShaderSource, u32, u32, u8**, s32*) \
+    X(void, glCompileShader, u32)
 
 /* 3.0 */
 #define GL_RGBA16F 0x881A
@@ -404,13 +443,23 @@ int _fltused;
 #define GL_MAX_DEPTH_TEXTURE_SAMPLES 0x910F
 
 /* 4.5 */
+#define GL_ZERO_TO_ONE 0x935F
+
 #define GL45_FUNCTIONS \
+    X(void, glClipControl, u32, u32) \
     X(void, glCreateFramebuffers, u32, u32*) \
     X(void, glNamedFramebufferRenderbuffer, u32, u32, u32, u32) \
     X(void, glClearNamedFramebufferfv, u32, u32, s32, float32*) \
     X(void, glBlitNamedFramebuffer, u32, u32, s32, s32, s32, s32, s32, s32, s32, s32, u32, u32) \
     X(void, glCreateRenderbuffers, u32, u32*) \
-    X(void, glNamedRenderbufferStorageMultisample, u32, u32, u32, u32, u32)
+    X(void, glNamedRenderbufferStorageMultisample, u32, u32, u32, u32, u32) \
+    X(void, glCreateVertexArrays, u32, u32*) \
+    X(void, glVertexArrayVertexBuffer, u32, u32, u32, s64, u32) \
+    X(void, glEnableVertexArrayAttrib, u32, u32) \
+    X(void, glVertexArrayAttribBinding, u32, u32, u32) \
+    X(void, glVertexArrayAttribFormat, u32, u32, s32, u32, bool, u32) \
+    X(void, glCreateBuffers, u32, u32*) \
+    X(void, glNamedBufferData, u32, u64, void*, u32)
 
 #if TARGET_OS_WINDOWS
 #define WGL_CONTEXT_MAJOR_VERSION_ARB 0x2091
@@ -426,6 +475,7 @@ GL10_FUNCTIONS
 
 static HGLRC opengl_ctx;
 #define X(RET, NAME, ...) static RET (*NAME)(__VA_ARGS__);
+GL20_FUNCTIONS
 GL30_FUNCTIONS
 GL45_FUNCTIONS
 #undef X
@@ -460,6 +510,7 @@ static void opengl_platform_init(void) {
     wglDeleteContext(temp_ctx);
 
 #define X(RET, NAME, ...) NAME = cast(RET (*)(__VA_ARGS__)) wglGetProcAddress(cast(u8*) #NAME);
+    GL20_FUNCTIONS
     GL30_FUNCTIONS
     GL45_FUNCTIONS
 #undef X
@@ -479,12 +530,84 @@ static u32 opengl_main_fbo;
 static u32 opengl_main_fbo_color0;
 static u32 opengl_main_fbo_depth;
 
+static float32 triangle_vertices[] = {
+    -0.5f, -0.5f, +0.0f,
+    +0.5f, -0.5f, +0.0f,
+    +0.0f, +0.5f, +0.0f,
+};
+
+static u32 opengl_triangle_vao;
+static u32 opengl_triangle_shader;
+
+static string platform_read_entire_file(u8* filepath) {
+    string result = {0};
+    HANDLE hfile = CreateFileA(filepath, GENERIC_READ, 0, null, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, null);
+    if (hfile != INVALID_HANDLE_VALUE) {
+        u64 file_size;
+        GetFileSizeEx(hfile, &file_size);
+        void* mem = VirtualAlloc(0, file_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+        u32 bytes_read;
+        ReadFile(hfile, mem, cast(u32) file_size, &bytes_read, null);
+        if (file_size == bytes_read) {
+            result.data = mem;
+            result.count = bytes_read;
+        } else {
+            VirtualFree(mem, 0, MEM_RELEASE);
+        }
+        CloseHandle(hfile);
+    }
+    return result;
+}
+
 static void opengl_init(void) {
     opengl_platform_init();
+
+    glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
 
     glCreateFramebuffers(1, &opengl_main_fbo);
     glCreateRenderbuffers(1, &opengl_main_fbo_color0);
     glCreateRenderbuffers(1, &opengl_main_fbo_depth);
+
+    u32 triangles_vbo;
+    glCreateBuffers(1, &triangles_vbo);
+    glNamedBufferData(triangles_vbo, size_of(float32) * 9, triangle_vertices, GL_STATIC_DRAW);
+
+    glCreateVertexArrays(1, &opengl_triangle_vao);
+    u32 vbo_binding = 0;
+    glVertexArrayVertexBuffer(opengl_triangle_vao, vbo_binding, triangles_vbo, 0, size_of(float32) * 3);
+
+    u32 position_attrib = 0;
+    glEnableVertexArrayAttrib(opengl_triangle_vao, position_attrib);
+    glVertexArrayAttribBinding(opengl_triangle_vao, position_attrib, vbo_binding);
+    glVertexArrayAttribFormat(opengl_triangle_vao, position_attrib, 3, GL_FLOAT, false, 0);
+
+    u32 vshader = glCreateShader(GL_VERTEX_SHADER);
+    string vsrc = platform_read_entire_file("res/shaders/opengl_triangle.vert");
+    if (vsrc.data) {
+        s32 vsrc_count = cast(s32) vsrc.count;
+        glShaderSource(vshader, 1, &vsrc.data, &vsrc_count);
+        VirtualFree(vsrc.data, 0, MEM_RELEASE);
+    }
+    glCompileShader(vshader);
+
+    u32 fshader = glCreateShader(GL_FRAGMENT_SHADER);
+    string fsrc = platform_read_entire_file("res/shaders/opengl_triangle.frag");
+    if (fsrc.data) {
+        s32 fsrc_count = cast(s32) fsrc.count;
+        glShaderSource(fshader, 1, &fsrc.data, &fsrc_count);
+        VirtualFree(fsrc.data, 0, MEM_RELEASE);
+    }
+    glCompileShader(fshader);
+
+    opengl_triangle_shader = glCreateProgram();
+    glAttachShader(opengl_triangle_shader, vshader);
+    glAttachShader(opengl_triangle_shader, fshader);
+    glLinkProgram(opengl_triangle_shader);
+    glDetachShader(opengl_triangle_shader, fshader);
+    glDetachShader(opengl_triangle_shader, vshader);
+
+    glDeleteShader(fshader);
+    glDeleteShader(vshader);
 }
 
 static void opengl_deinit(void) {
@@ -517,6 +640,10 @@ static void opengl_present(void) {
     glBindFramebuffer(GL_FRAMEBUFFER, opengl_main_fbo);
 
     glViewport(0, 0, platform_screen_width, platform_screen_height);
+
+    glUseProgram(opengl_triangle_shader);
+    glBindVertexArray(opengl_triangle_vao);
+    glDrawArrays(GL_TRIANGLES, 0, len(triangle_vertices));
 
     // note(dfra): fix for intel default framebuffer resize bug
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
