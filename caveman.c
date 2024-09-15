@@ -390,10 +390,34 @@ int _fltused;
 /* 1.0 */
 #define GL_COLOR_BUFFER_BIT 0x00004000
 #define GL_TRIANGLES 0x0004
+#define GL_FRONT_AND_BACK 0x0408
+#define GL_CULL_FACE 0x0B44
+#define GL_DEPTH_TEST 0x0B71
+#define GL_BLEND 0x0BE2
+#define GL_TEXTURE_2D 0x0DE1
+#define GL_UNSIGNED_BYTE 0x1401
+#define GL_UNSIGNED_SHORT 0x1403
+#define GL_UNSIGNED_INT 0x1405
 #define GL_FLOAT 0x1406
 #define GL_COLOR 0x1800
 #define GL_DEPTH 0x1801
+#define GL_ALPHA 0x1906
+#define GL_RGB 0x1907
+#define GL_RGBA 0x1908
+#define GL_POINT 0x1B00
+#define GL_LINE 0x1B01
+#define GL_FILL 0x1B02
 #define GL_NEAREST 0x2600
+#define GL_LINEAR 0x2601
+#define GL_NEAREST_MIPMAP_NEAREST 0x2700
+#define GL_LINEAR_MIPMAP_NEAREST 0x2701
+#define GL_NEAREST_MIPMAP_LINEAR 0x2702
+#define GL_LINEAR_MIPMAP_LINEAR 0x2703
+#define GL_TEXTURE_MAG_FILTER 0x2800
+#define GL_TEXTURE_MIN_FILTER 0x2801
+#define GL_TEXTURE_WRAP_S 0x2802
+#define GL_TEXTURE_WRAP_T 0x2803
+#define GL_REPEAT 0x2901
 
 #define GL10_FUNCTIONS \
     X(void, glEnable, u32) \
@@ -404,6 +428,13 @@ int _fltused;
     X(void, glViewport, s32, s32, u32, u32) \
     X(void, glClear, u32) \
     X(void, glDrawArrays, u32, s32, u32)
+
+/* 1.1 */
+#define GL_RGBA8 0x8058
+
+/* 1.2 */
+#define GL_BGR 0x80E0
+#define GL_BGRA 0x80E1
 
 /* 1.5 */
 #define GL_STREAM_DRAW 0x88E0
@@ -459,7 +490,12 @@ int _fltused;
     X(void, glVertexArrayAttribBinding, u32, u32, u32) \
     X(void, glVertexArrayAttribFormat, u32, u32, s32, u32, bool, u32) \
     X(void, glCreateBuffers, u32, u32*) \
-    X(void, glNamedBufferData, u32, u64, void*, u32)
+    X(void, glNamedBufferData, u32, u64, void*, u32) \
+    X(void, glCreateTextures, u32, u32, u32*) \
+    X(void, glTextureStorage2D, u32, u32, u32, u32, u32) \
+    X(void, glTextureSubImage2D, u32, s32, s32, s32, u32, u32, u32, u32, void*) \
+    X(void, glTextureParameteri, u32, u32, s32) \
+    X(void, glBindTextureUnit, u32, u32)
 
 #if TARGET_OS_WINDOWS
 #define WGL_CONTEXT_MAJOR_VERSION_ARB 0x2091
@@ -531,13 +567,14 @@ static u32 opengl_main_fbo_color0;
 static u32 opengl_main_fbo_depth;
 
 static float32 triangle_vertices[] = {
-    -0.5f, -0.5f, +0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
-    +0.5f, -0.5f, +0.0f, 0.0f, 1.0f, 0.0f, 1.0f,
-    +0.0f, +0.5f, +0.0f, 0.0f, 0.0f, 1.0f, 1.0f,
+    -0.5f, -0.5f, +0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+    +0.5f, -0.5f, +0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f,
+    +0.0f, +0.5f, +0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 1.0f,
 };
 
 static u32 opengl_triangle_vao;
 static u32 opengl_triangle_shader;
+static u32 opengl_triangle_parabola_texture;
 
 static string platform_read_entire_file(u8* filepath) {
     string result = {0};
@@ -570,11 +607,11 @@ static void opengl_init(void) {
 
     u32 triangles_vbo;
     glCreateBuffers(1, &triangles_vbo);
-    glNamedBufferData(triangles_vbo, size_of(float32) * 21, triangle_vertices, GL_STATIC_DRAW);
+    glNamedBufferData(triangles_vbo, size_of(float32) * 27, triangle_vertices, GL_STATIC_DRAW);
 
     glCreateVertexArrays(1, &opengl_triangle_vao);
     u32 vbo_binding = 0;
-    glVertexArrayVertexBuffer(opengl_triangle_vao, vbo_binding, triangles_vbo, 0, size_of(float32) * 7);
+    glVertexArrayVertexBuffer(opengl_triangle_vao, vbo_binding, triangles_vbo, 0, size_of(float32) * 9);
 
     u32 position_attrib = 0;
     glEnableVertexArrayAttrib(opengl_triangle_vao, position_attrib);
@@ -585,6 +622,11 @@ static void opengl_init(void) {
     glEnableVertexArrayAttrib(opengl_triangle_vao, color_attrib);
     glVertexArrayAttribBinding(opengl_triangle_vao, color_attrib, vbo_binding);
     glVertexArrayAttribFormat(opengl_triangle_vao, color_attrib, 4, GL_FLOAT, false, size_of(float32) * 3);
+
+    u32 texcoord_attrib = 2;
+    glEnableVertexArrayAttrib(opengl_triangle_vao, texcoord_attrib);
+    glVertexArrayAttribBinding(opengl_triangle_vao, texcoord_attrib, vbo_binding);
+    glVertexArrayAttribFormat(opengl_triangle_vao, texcoord_attrib, 2, GL_FLOAT, false, size_of(float32) * 7);
 
     u32 vshader = glCreateShader(GL_VERTEX_SHADER);
     string vsrc = platform_read_entire_file("res/shaders/opengl_triangle.vert");
@@ -613,6 +655,18 @@ static void opengl_init(void) {
 
     glDeleteShader(fshader);
     glDeleteShader(vshader);
+
+    glCreateTextures(GL_TEXTURE_2D, 1, &opengl_triangle_parabola_texture);
+    glTextureStorage2D(opengl_triangle_parabola_texture, 1, GL_RGBA8, 512, 512);
+    glTextureParameteri(opengl_triangle_parabola_texture, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    string bmp = platform_read_entire_file("res/textures/triangle_parabolas.bmp");
+    if (bmp.data) {
+        u8* file_data = cast(u8*) bmp.data;
+        u32 pixels_offset = *cast(u32*) (file_data + 10);
+        u8* pixels = file_data + pixels_offset;
+        glTextureSubImage2D(opengl_triangle_parabola_texture, 0, 0, 0, 512, 512, GL_BGR, GL_UNSIGNED_BYTE, pixels);
+        VirtualFree(bmp.data, 0, MEM_RELEASE);
+    }
 }
 
 static void opengl_deinit(void) {
@@ -648,6 +702,7 @@ static void opengl_present(void) {
 
     glUseProgram(opengl_triangle_shader);
     glBindVertexArray(opengl_triangle_vao);
+    glBindTextureUnit(0, opengl_triangle_parabola_texture);
     glDrawArrays(GL_TRIANGLES, 0, len(triangle_vertices));
 
     // note(dfra): fix for intel default framebuffer resize bug
