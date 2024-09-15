@@ -390,6 +390,9 @@ int _fltused;
 /* 1.0 */
 #define GL_COLOR_BUFFER_BIT 0x00004000
 #define GL_TRIANGLES 0x0004
+#define GL_GEQUAL 0x0206
+#define GL_SRC_ALPHA 0x0302
+#define GL_ONE_MINUS_SRC_ALPHA 0x0303
 #define GL_FRONT_AND_BACK 0x0408
 #define GL_CULL_FACE 0x0B44
 #define GL_DEPTH_TEST 0x0B71
@@ -600,7 +603,10 @@ static string platform_read_entire_file(u8* filepath) {
 static void opengl_init(void) {
     opengl_platform_init();
 
+    glDepthFunc(GL_GEQUAL);
     glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
+
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     glCreateFramebuffers(1, &opengl_main_fbo);
     glCreateRenderbuffers(1, &opengl_main_fbo_color0);
@@ -702,19 +708,25 @@ static void opengl_present(void) {
     glViewport(0, 0, platform_screen_width, platform_screen_height);
 
     float32 aspect_ratio = cast(float32) platform_screen_width / cast(float32) platform_screen_height;
-    float32 transform[16] = {
-        1.0f / aspect_ratio, 0.0f, 0.0f, 0.0f,
-        0.0f, 1.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 1.0f, 0.0f,
-        0.0f, 0.0f, 0.0f, 1.0f,
-    };
 
+    glEnable(GL_BLEND);
+    glEnable(GL_CULL_FACE);
+    glEnable(GL_DEPTH_TEST);
     glUseProgram(opengl_triangle_shader);
     s32 u_transform = 0;
-    glProgramUniformMatrix4fv(opengl_triangle_shader, u_transform, 1, false, transform);
     glBindVertexArray(opengl_triangle_vao);
     glBindTextureUnit(0, opengl_triangle_parabola_texture);
-    glDrawArrays(GL_TRIANGLES, 0, len(triangle_vertices));
+
+    for (u8 i = 0; i < 5; i += 1) {
+        float32 transform[16] = {
+            1.0f / aspect_ratio, 0.0f, 0.0f, 0.0f,
+            0.0f, 1.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 1.0f, -1.0f,
+            i * 0.2f, 0.0f, 1.0f - i * 0.2f, 1.0f,
+        };
+        glProgramUniformMatrix4fv(opengl_triangle_shader, u_transform, 1, false, transform);
+        glDrawArrays(GL_TRIANGLES, 0, len(triangle_vertices));
+    }
 
     // note(dfra): fix for intel default framebuffer resize bug
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
