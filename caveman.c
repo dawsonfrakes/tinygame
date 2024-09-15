@@ -728,6 +728,17 @@ static void opengl_present(void) {
         glDrawArrays(GL_TRIANGLES, 0, len(triangle_vertices));
     }
 
+    for (s8 i = 0; i > -5; i -= 1) {
+        float32 transform[16] = {
+            1.0f / aspect_ratio, 0.0f, 0.0f, 0.0f,
+            0.0f, 1.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 1.0f, -1.0f,
+            i * 0.2f, 0.0f, 1.0f + i * 0.2f, 1.0f,
+        };
+        glProgramUniformMatrix4fv(opengl_triangle_shader, u_transform, 1, false, transform);
+        glDrawArrays(GL_TRIANGLES, 0, len(triangle_vertices));
+    }
+
     // note(dfra): fix for intel default framebuffer resize bug
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glClear(0);
