@@ -1,19 +1,37 @@
-#define TARGET_CPU_ARCH_AMD64 1
-#define TARGET_OS_WINDOWS 1
-#define RENDERER_OPENGL 1
 #define DEVELOPER 1
+#define RENDERER_OPENGL 1
+#define RENDERER_GDI 0
+
+#if defined(__TINYC__)
+#define COMPILER_TCC 1
+#else
+#define COMPILER_TCC 0
+#endif
+
+#if defined(__x86_64__) || defined(_M_AMD64)
+#define TARGET_CPU_ARCH_AMD64 1
+#else
+#define TARGET_CPU_ARCH_AMD64 0
+#endif
+
+#if defined(_WIN32) || defined(_WIN64) || defined(__WIN32__)
+#define TARGET_OS_WINDOWS 1
+#else
+#define TARGET_OS_WINDOWS 0
+#endif
+
+#define offset_of(T, F) (cast(u64) &((T*) 0)->F)
+#define size_of(T) sizeof(T)
+#define cast(T) (T)
+#define align_up(X, Y) ((X) + ((Y) - 1) & ~((Y) - 1))
+#define len(X) (size_of(X) / size_of((X)[0]))
+#define str(X) ((string) {len(X) - 1, (u8*) (X)})
+#define min(X, Y) ((X) < (Y) ? (X) : (Y))
+#define max(X, Y) ((X) > (Y) ? (X) : (Y))
 
 #define true 1
 #define false 0
 #define null (cast(void*) 0)
-
-#define size_of(T) sizeof(T)
-#define offset_of(T, F) ((u64) &(cast(T*) 0)->F)
-#define cast(T) (T)
-#define len(X) (size_of(X) / size_of((X)[0]))
-#define str(X) (cast(string) {len(X) - 1, (X)})
-#define min(X, Y) ((X) < (Y) ? (X) : (Y))
-#define max(X, Y) ((X) > (Y) ? (X) : (Y))
 
 typedef signed char s8;
 typedef short s16;
@@ -42,34 +60,32 @@ static void opengl_resize(void);
 static void opengl_present(void);
 #endif
 
+#if RENDERER_GDI && TARGET_OS_WINDOWS
+static void gdi_init(void);
+static void gdi_deinit(void);
+static void gdi_resize(void);
+static void gdi_present(void);
+#endif
+
 #if TARGET_OS_WINDOWS
 /* kernel32 */
-#define GENERIC_READ 0x80000000
-#define OPEN_EXISTING 3
-#define FILE_ATTRIBUTE_NORMAL 0x80
-#define INVALID_HANDLE_VALUE (cast(HANDLE) -1)
-#define MEM_COMMIT 0x00001000
-#define MEM_RESERVE 0x00002000
-#define MEM_RELEASE 0x00008000
-#define PAGE_READWRITE 0x04
-
 typedef void* HANDLE;
 typedef struct HINSTANCE__* HINSTANCE;
 typedef s64 (*PROC)(void);
 
 HINSTANCE GetModuleHandleW(u16*);
 HANDLE CreateFileA(u8*, u32, u32, void*, u32, u32, HANDLE);
-s32 CloseHandle(HANDLE);
 s32 GetFileSizeEx(HANDLE, u64*);
 s32 ReadFile(HANDLE, void*, u32, u32*, void*);
+s32 CloseHandle(HANDLE);
 void* VirtualAlloc(void*, u64, u32, u32);
 s32 VirtualFree(void*, u64, u32);
 void Sleep(u32);
 void ExitProcess(u32);
 
 /* user32 */
-#define IDI_WARNING (cast(void*) cast(u64) 32515)
-#define IDC_CROSS (cast(void*) cast(u64) 32515)
+#define IDI_WARNING (cast(u16*) cast(u64) 32515)
+#define IDC_CROSS (cast(u16*) cast(u64) 32515)
 #define CS_OWNDC 0x0020
 #define WS_MAXIMIZEBOX 0x00010000
 #define WS_MINIMIZEBOX 0x00020000
@@ -108,8 +124,8 @@ void ExitProcess(u32);
 
 typedef struct HDC__* HDC;
 typedef struct HWND__* HWND;
-typedef struct HICON__* HICON;
 typedef struct HMENU__* HMENU;
+typedef struct HICON__* HICON;
 typedef struct HBRUSH__* HBRUSH;
 typedef struct HCURSOR__* HCURSOR;
 typedef struct HMONITOR__* HMONITOR;
@@ -125,6 +141,15 @@ typedef struct {
     s32 bottom;
 } RECT;
 typedef struct {
+    HWND hwnd;
+    u32 message;
+    u64 wParam;
+    s64 lParam;
+    u32 time;
+    POINT pt;
+    u32 lPrivate;
+} MSG;
+typedef struct {
     u32 cbSize;
     u32 style;
     WNDPROC lpfnWndProc;
@@ -139,15 +164,6 @@ typedef struct {
     HICON hIconSm;
 } WNDCLASSEXW;
 typedef struct {
-    HWND hwnd;
-    u32 message;
-    u64 wParam;
-    s64 lParam;
-    u32 time;
-    POINT pt;
-    u32 lPrivate;
-} MSG;
-typedef struct {
     u32 length;
     u32 flags;
     u32 showCmd;
@@ -157,10 +173,10 @@ typedef struct {
     RECT rcDevice;
 } WINDOWPLACEMENT;
 typedef struct {
-  u32 cbSize;
-  RECT rcMonitor;
-  RECT rcWork;
-  u32 dwFlags;
+    u32 cbSize;
+    RECT rcMonitor;
+    RECT rcWork;
+    u32 dwFlags;
 } MONITORINFO;
 
 s32 SetProcessDPIAware(void);
@@ -171,25 +187,44 @@ HWND CreateWindowExW(u32, u16*, u16*, u32, s32, s32, s32, s32, HWND, HMENU, HINS
 s32 PeekMessageW(MSG*, HWND, u32, u32, u32);
 s32 TranslateMessage(MSG*);
 s64 DispatchMessageW(MSG*);
-HDC GetDC(HWND);
 s64 DefWindowProcW(HWND, u32, u64, s64);
-void PostQuitMessage(s32);
+HDC GetDC(HWND);
 s32 ValidateRect(HWND, RECT*);
 s32 DestroyWindow(HWND);
 s64 GetWindowLongPtrW(HWND, s32);
 s64 SetWindowLongPtrW(HWND, s32, s64);
 s32 GetWindowPlacement(HWND, WINDOWPLACEMENT*);
 s32 SetWindowPlacement(HWND, WINDOWPLACEMENT*);
+s32 SetWindowPos(HWND, HWND, s32, s32, s32, s32, u32);
 HMONITOR MonitorFromWindow(HWND, u32);
 s32 GetMonitorInfoW(HMONITOR, MONITORINFO*);
-s32 SetWindowPos(HWND, HWND, s32, s32, s32, s32, u32);
+void PostQuitMessage(s32);
 
 /* gdi32 */
+#define SRCCOPY 0x00CC0020
 #define PFD_DOUBLEBUFFER 0x00000001
 #define PFD_DRAW_TO_WINDOW 0x00000004
 #define PFD_SUPPORT_OPENGL 0x00000020
 #define PFD_DEPTH_DONTCARE 0x20000000
 
+typedef struct HBITMAP__* HBITMAP;
+typedef struct {
+    u32 biSize;
+    s32 biWidth;
+    s32 biHeight;
+    u16 biPlanes;
+    u16 biBitCount;
+    u32 biCompression;
+    u32 biSizeImage;
+    s32 biXPelsPerMeter;
+    s32 biYPelsPerMeter;
+    u32 biClrUsed;
+    u32 biClrImportant;
+} BITMAPINFOHEADER;
+typedef struct {
+    BITMAPINFOHEADER bmiHeader;
+    void* bmiColors;
+} BITMAPINFO;
 typedef struct {
     u16 nSize;
     u16 nVersion;
@@ -219,6 +254,12 @@ typedef struct {
     u32 dwDamageMask;
 } PIXELFORMATDESCRIPTOR;
 
+HDC CreateCompatibleDC(HDC);
+HBITMAP CreateDIBSection(HDC, BITMAPINFO*, u32, void**, HANDLE, u32);
+s32 DeleteDC(HDC);
+s32 DeleteObject(void*);
+void* SelectObject(HDC, void*);
+s32 BitBlt(HDC, s32, s32, s32, s32, HDC, s32, s32, u32);
 s32 ChoosePixelFormat(HDC, PIXELFORMATDESCRIPTOR*);
 s32 SetPixelFormat(HDC, s32, PIXELFORMATDESCRIPTOR*);
 s32 SwapBuffers(HDC);
@@ -236,10 +277,10 @@ PROC wglGetProcAddress(u8*);
 #define DWMWA_WINDOW_CORNER_PREFERENCE 33
 #define DWMWCP_DONOTROUND 1
 
+u32 DwmSetWindowAttribute(HWND, u32, void*, u32);
+
 /* winmm */
 u32 timeBeginPeriod(u32);
-
-u32 DwmSetWindowAttribute(HWND, u32, void*, u32);
 
 static HINSTANCE platform_hinstance;
 static HWND platform_hwnd;
@@ -298,7 +339,7 @@ static s64 window_proc(HWND hwnd, u32 message, u64 wParam, s64 lParam) {
             platform_hwnd = hwnd;
             platform_hdc = GetDC(hwnd);
 
-            s32 dark_mode = true;
+            s32 dark_mode = 1;
             DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark_mode, 4);
             s32 round_mode = DWMWCP_DONOTROUND;
             DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &round_mode, 4);
@@ -334,7 +375,7 @@ void WinMainCRTStartup(void) {
     wndclass.hCursor = LoadCursorW(null, IDC_CROSS);
     wndclass.lpszClassName = L"A";
     RegisterClassExW(&wndclass);
-    CreateWindowExW(0, wndclass.lpszClassName, L"Caveman Goes Ooga Booga",
+    CreateWindowExW(0, wndclass.lpszClassName, L"game",
         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
         CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
         null, null, platform_hinstance, null);
@@ -353,7 +394,7 @@ void WinMainCRTStartup(void) {
                     bool sys = msg.message == WM_SYSKEYDOWN || msg.message == WM_SYSKEYUP;
                     bool alt = sys && (cast(u64) msg.lParam & cast(u64) 1 << 29) != 0;
 
-                    if (!repeat && (!sys || alt || msg.wParam == VK_F10)) {
+                    if (!repeat && (!sys || alt || msg.message == VK_F10)) {
                         if (pressed) {
                             if (msg.wParam == VK_F4 && alt) DestroyWindow(platform_hwnd);
                             if (msg.wParam == VK_F11 || (msg.wParam == VK_RETURN && alt)) toggle_fullscreen();
@@ -367,7 +408,6 @@ void WinMainCRTStartup(void) {
                 }
                 default: {
                     DispatchMessageW(&msg);
-                    break;
                 }
             }
         }
@@ -382,8 +422,6 @@ game_loop_end:
 
     ExitProcess(0);
 }
-
-int _fltused;
 #endif
 
 #if RENDERER_OPENGL
@@ -513,12 +551,12 @@ int _fltused;
 GL10_FUNCTIONS
 #undef X
 
-static HGLRC opengl_ctx;
 #define X(RET, NAME, ...) static RET (*NAME)(__VA_ARGS__);
 GL20_FUNCTIONS
 GL30_FUNCTIONS
 GL45_FUNCTIONS
 #undef X
+static HGLRC opengl_ctx;
 
 static void opengl_platform_init(void) {
     PIXELFORMATDESCRIPTOR pfd = {0};
@@ -570,44 +608,6 @@ static u32 opengl_main_fbo;
 static u32 opengl_main_fbo_color0;
 static u32 opengl_main_fbo_depth;
 
-static float32 triangle_vertices[] = {
-    -0.5f, -0.5f, +0.0f,  0.0f, 0.0f, 1.0f,  1.0f, 0.0f, 0.0f, 1.0f,  0.0f, 0.0f,
-    +0.5f, -0.5f, +0.0f,  0.0f, 0.0f, 1.0f,  0.0f, 1.0f, 0.0f, 1.0f,  1.0f, 0.0f,
-    +0.0f, +0.5f, +0.0f,  0.0f, 0.0f, 1.0f,  0.0f, 0.0f, 1.0f, 1.0f,  0.5f, 1.0f,
-};
-
-static u32 opengl_triangle_vao;
-static u32 opengl_triangle_shader;
-static u32 opengl_triangle_parabola_texture;
-
-static string platform_read_entire_file(u8* filepath) {
-    string result = {0};
-    HANDLE hfile = CreateFileA(filepath, GENERIC_READ, 0, null, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, null);
-    if (hfile != INVALID_HANDLE_VALUE) {
-        u64 file_size;
-        GetFileSizeEx(hfile, &file_size);
-        void* mem = VirtualAlloc(0, file_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-        u32 bytes_read;
-        ReadFile(hfile, mem, cast(u32) file_size, &bytes_read, null);
-        if (file_size == bytes_read) {
-            result.data = mem;
-            result.count = bytes_read;
-        } else {
-            VirtualFree(mem, 0, MEM_RELEASE);
-        }
-        CloseHandle(hfile);
-    }
-    return result;
-}
-
-static void m4mul(float32* c, float32* a, float32* b) {
-    memset(c, 0, size_of(float32) * 16);
-    for (u8 i = 0; i < 4; i += 1)
-        for (u8 j = 0; j < 4; j += 1)
-            for (u8 k = 0; k < 4; k += 1)
-                c[i * 4 + j] += b[i * 4 + k] * a[k * 4 + j];
-}
-
 static void opengl_init(void) {
     opengl_platform_init();
 
@@ -619,74 +619,6 @@ static void opengl_init(void) {
     glCreateFramebuffers(1, &opengl_main_fbo);
     glCreateRenderbuffers(1, &opengl_main_fbo_color0);
     glCreateRenderbuffers(1, &opengl_main_fbo_depth);
-
-    u32 triangles_vbo;
-    glCreateBuffers(1, &triangles_vbo);
-    glNamedBufferData(triangles_vbo, size_of(float32) * 36, triangle_vertices, GL_STATIC_DRAW);
-
-    glCreateVertexArrays(1, &opengl_triangle_vao);
-    u32 vbo_binding = 0;
-    glVertexArrayVertexBuffer(opengl_triangle_vao, vbo_binding, triangles_vbo, 0, size_of(float32) * 12);
-
-    u32 position_attrib = 0;
-    glEnableVertexArrayAttrib(opengl_triangle_vao, position_attrib);
-    glVertexArrayAttribBinding(opengl_triangle_vao, position_attrib, vbo_binding);
-    glVertexArrayAttribFormat(opengl_triangle_vao, position_attrib, 3, GL_FLOAT, false, 0);
-
-    u32 normal_attrib = 1;
-    glEnableVertexArrayAttrib(opengl_triangle_vao, normal_attrib);
-    glVertexArrayAttribBinding(opengl_triangle_vao, normal_attrib, vbo_binding);
-    glVertexArrayAttribFormat(opengl_triangle_vao, normal_attrib, 3, GL_FLOAT, false, size_of(float32) * 3);
-
-    u32 color_attrib = 2;
-    glEnableVertexArrayAttrib(opengl_triangle_vao, color_attrib);
-    glVertexArrayAttribBinding(opengl_triangle_vao, color_attrib, vbo_binding);
-    glVertexArrayAttribFormat(opengl_triangle_vao, color_attrib, 4, GL_FLOAT, false, size_of(float32) * 6);
-
-    u32 texcoord_attrib = 3;
-    glEnableVertexArrayAttrib(opengl_triangle_vao, texcoord_attrib);
-    glVertexArrayAttribBinding(opengl_triangle_vao, texcoord_attrib, vbo_binding);
-    glVertexArrayAttribFormat(opengl_triangle_vao, texcoord_attrib, 2, GL_FLOAT, false, size_of(float32) * 10);
-
-    u32 vshader = glCreateShader(GL_VERTEX_SHADER);
-    string vsrc = platform_read_entire_file("res/shaders/opengl_triangle.vert");
-    if (vsrc.data) {
-        s32 vsrc_count = cast(s32) vsrc.count;
-        glShaderSource(vshader, 1, &vsrc.data, &vsrc_count);
-        VirtualFree(vsrc.data, 0, MEM_RELEASE);
-    }
-    glCompileShader(vshader);
-
-    u32 fshader = glCreateShader(GL_FRAGMENT_SHADER);
-    string fsrc = platform_read_entire_file("res/shaders/opengl_triangle.frag");
-    if (fsrc.data) {
-        s32 fsrc_count = cast(s32) fsrc.count;
-        glShaderSource(fshader, 1, &fsrc.data, &fsrc_count);
-        VirtualFree(fsrc.data, 0, MEM_RELEASE);
-    }
-    glCompileShader(fshader);
-
-    opengl_triangle_shader = glCreateProgram();
-    glAttachShader(opengl_triangle_shader, vshader);
-    glAttachShader(opengl_triangle_shader, fshader);
-    glLinkProgram(opengl_triangle_shader);
-    glDetachShader(opengl_triangle_shader, fshader);
-    glDetachShader(opengl_triangle_shader, vshader);
-
-    glDeleteShader(fshader);
-    glDeleteShader(vshader);
-
-    glCreateTextures(GL_TEXTURE_2D, 1, &opengl_triangle_parabola_texture);
-    glTextureStorage2D(opengl_triangle_parabola_texture, 1, GL_RGBA8, 512, 512);
-    glTextureParameteri(opengl_triangle_parabola_texture, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    string bmp = platform_read_entire_file("res/textures/triangle_parabolas.bmp");
-    if (bmp.data) {
-        u8* file_data = cast(u8*) bmp.data;
-        u32 pixels_offset = *cast(u32*) (file_data + 10);
-        u8* pixels = file_data + pixels_offset;
-        glTextureSubImage2D(opengl_triangle_parabola_texture, 0, 0, 0, 512, 512, GL_BGR, GL_UNSIGNED_BYTE, pixels);
-        VirtualFree(bmp.data, 0, MEM_RELEASE);
-    }
 }
 
 static void opengl_deinit(void) {
@@ -720,37 +652,6 @@ static void opengl_present(void) {
 
     glViewport(0, 0, platform_screen_width, platform_screen_height);
 
-    float32 aspect_ratio = cast(float32) platform_screen_width / cast(float32) platform_screen_height;
-
-    glEnable(GL_BLEND);
-    glEnable(GL_CULL_FACE);
-    glEnable(GL_DEPTH_TEST);
-    glUseProgram(opengl_triangle_shader);
-    s32 u_world_transform = 0;
-    s32 u_model_transform = 1;
-    glBindVertexArray(opengl_triangle_vao);
-    glBindTextureUnit(0, opengl_triangle_parabola_texture);
-
-    float32 projection_transform[16] = {
-        1.0f / aspect_ratio, 0.0f, 0.0f, 0.0f,
-        0.0f, 1.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 0.0f, -1.0f,
-        0.0f, 0.0f, 1.0f, 1.0f,
-    };
-    for (u8 i = 0; i < 5; i += 1) {
-        float32 model_transform[16] = {
-            0.8f, 0.0f, 0.0f, 0.0f,
-            0.0f, 0.8f, 0.0f, 0.0f,
-            0.0f, 0.0f, 0.8f, 0.0f,
-            i * 0.8f, 0.0f, 0.0f, 1.0f,
-        };
-        float32 world_transform[16];
-        m4mul(world_transform, projection_transform, model_transform);
-        glProgramUniformMatrix4fv(opengl_triangle_shader, u_world_transform, 1, false, world_transform);
-        glProgramUniformMatrix4fv(opengl_triangle_shader, u_model_transform, 1, false, model_transform);
-        glDrawArrays(GL_TRIANGLES, 0, len(triangle_vertices));
-    }
-
     // note(dfra): fix for intel default framebuffer resize bug
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glClear(0);
@@ -763,5 +664,58 @@ static void opengl_present(void) {
     glDisable(GL_FRAMEBUFFER_SRGB);
 
     opengl_platform_present();
+}
+#endif
+
+#if RENDERER_GDI && TARGET_OS_WINDOWS
+static BITMAPINFO gdi_backbuffer_bmi;
+static HDC gdi_backbuffer_dc;
+static HBITMAP gdi_backbuffer_bm;
+static void* gdi_backbuffer_pixels;
+
+static void gdi_init(void) {
+    gdi_backbuffer_bmi.bmiHeader.biSize = size_of(BITMAPINFOHEADER);
+    gdi_backbuffer_bmi.bmiHeader.biPlanes = 1;
+    gdi_backbuffer_bmi.bmiHeader.biBitCount = 32;
+}
+
+static void gdi_deinit(void) {
+
+}
+
+static void gdi_resize(void) {
+    gdi_backbuffer_bmi.bmiHeader.biWidth = align_up(platform_screen_width, 16);
+    gdi_backbuffer_bmi.bmiHeader.biHeight = align_up(platform_screen_height, 16);
+    if (gdi_backbuffer_dc) DeleteDC(gdi_backbuffer_dc);
+    if (gdi_backbuffer_bm) DeleteObject(gdi_backbuffer_bm);
+    gdi_backbuffer_dc = CreateCompatibleDC(platform_hdc);
+    gdi_backbuffer_bm = CreateDIBSection(platform_hdc, &gdi_backbuffer_bmi, 0, &gdi_backbuffer_pixels, null, 0);
+    SelectObject(gdi_backbuffer_dc, gdi_backbuffer_bm);
+}
+
+static void gdi_present(void) {
+    BitBlt(platform_hdc, 0, 0, platform_screen_width, platform_screen_height,
+        gdi_backbuffer_dc, 0, gdi_backbuffer_bmi.bmiHeader.biHeight - platform_screen_height,
+        SRCCOPY);
+}
+
+static void gdi_clear(void) {
+    u32* row = cast(u32*) gdi_backbuffer_pixels;
+    for (u16 y = 0; y < platform_screen_height; y += 1) {
+        u32* pixel = row;
+        for (u16 x = 0; x < platform_screen_width; x += 1) {
+            *pixel = 0xFFFF0000;
+            pixel += 1;
+        }
+        row += gdi_backbuffer_bmi.bmiHeader.biWidth;
+    }
+}
+#endif
+
+#if COMPILER_TCC && TARGET_CPU_ARCH_AMD64
+void* memset(void*, int, u64);
+void* memset(void* a, int b, u64 c) {
+    __asm__ ("rep stosb" :: "D" (a), "a" (b), "c" (c));
+    return a;
 }
 #endif
