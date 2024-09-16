@@ -571,9 +571,9 @@ static u32 opengl_main_fbo_color0;
 static u32 opengl_main_fbo_depth;
 
 static float32 triangle_vertices[] = {
-    -0.5f, -0.5f, +0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-    +0.5f, -0.5f, +0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f,
-    +0.0f, +0.5f, +0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.5f, 1.0f,
+    -0.5f, -0.5f, +0.0f,  0.0f, 0.0f, 1.0f,  1.0f, 0.0f, 0.0f, 1.0f,  0.0f, 0.0f,
+    +0.5f, -0.5f, +0.0f,  0.0f, 0.0f, 1.0f,  0.0f, 1.0f, 0.0f, 1.0f,  1.0f, 0.0f,
+    +0.0f, +0.5f, +0.0f,  0.0f, 0.0f, 1.0f,  0.0f, 0.0f, 1.0f, 1.0f,  0.5f, 1.0f,
 };
 
 static u32 opengl_triangle_vao;
@@ -600,6 +600,14 @@ static string platform_read_entire_file(u8* filepath) {
     return result;
 }
 
+static void m4mul(float32* c, float32* a, float32* b) {
+    memset(c, 0, size_of(float32) * 16);
+    for (u8 i = 0; i < 4; i += 1)
+        for (u8 j = 0; j < 4; j += 1)
+            for (u8 k = 0; k < 4; k += 1)
+                c[i * 4 + j] += b[i * 4 + k] * a[k * 4 + j];
+}
+
 static void opengl_init(void) {
     opengl_platform_init();
 
@@ -614,26 +622,31 @@ static void opengl_init(void) {
 
     u32 triangles_vbo;
     glCreateBuffers(1, &triangles_vbo);
-    glNamedBufferData(triangles_vbo, size_of(float32) * 27, triangle_vertices, GL_STATIC_DRAW);
+    glNamedBufferData(triangles_vbo, size_of(float32) * 36, triangle_vertices, GL_STATIC_DRAW);
 
     glCreateVertexArrays(1, &opengl_triangle_vao);
     u32 vbo_binding = 0;
-    glVertexArrayVertexBuffer(opengl_triangle_vao, vbo_binding, triangles_vbo, 0, size_of(float32) * 9);
+    glVertexArrayVertexBuffer(opengl_triangle_vao, vbo_binding, triangles_vbo, 0, size_of(float32) * 12);
 
     u32 position_attrib = 0;
     glEnableVertexArrayAttrib(opengl_triangle_vao, position_attrib);
     glVertexArrayAttribBinding(opengl_triangle_vao, position_attrib, vbo_binding);
     glVertexArrayAttribFormat(opengl_triangle_vao, position_attrib, 3, GL_FLOAT, false, 0);
 
-    u32 color_attrib = 1;
+    u32 normal_attrib = 1;
+    glEnableVertexArrayAttrib(opengl_triangle_vao, normal_attrib);
+    glVertexArrayAttribBinding(opengl_triangle_vao, normal_attrib, vbo_binding);
+    glVertexArrayAttribFormat(opengl_triangle_vao, normal_attrib, 3, GL_FLOAT, false, size_of(float32) * 3);
+
+    u32 color_attrib = 2;
     glEnableVertexArrayAttrib(opengl_triangle_vao, color_attrib);
     glVertexArrayAttribBinding(opengl_triangle_vao, color_attrib, vbo_binding);
-    glVertexArrayAttribFormat(opengl_triangle_vao, color_attrib, 4, GL_FLOAT, false, size_of(float32) * 3);
+    glVertexArrayAttribFormat(opengl_triangle_vao, color_attrib, 4, GL_FLOAT, false, size_of(float32) * 6);
 
-    u32 texcoord_attrib = 2;
+    u32 texcoord_attrib = 3;
     glEnableVertexArrayAttrib(opengl_triangle_vao, texcoord_attrib);
     glVertexArrayAttribBinding(opengl_triangle_vao, texcoord_attrib, vbo_binding);
-    glVertexArrayAttribFormat(opengl_triangle_vao, texcoord_attrib, 2, GL_FLOAT, false, size_of(float32) * 7);
+    glVertexArrayAttribFormat(opengl_triangle_vao, texcoord_attrib, 2, GL_FLOAT, false, size_of(float32) * 10);
 
     u32 vshader = glCreateShader(GL_VERTEX_SHADER);
     string vsrc = platform_read_entire_file("res/shaders/opengl_triangle.vert");
@@ -713,29 +726,28 @@ static void opengl_present(void) {
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
     glUseProgram(opengl_triangle_shader);
-    s32 u_transform = 0;
+    s32 u_world_transform = 0;
+    s32 u_model_transform = 1;
     glBindVertexArray(opengl_triangle_vao);
     glBindTextureUnit(0, opengl_triangle_parabola_texture);
 
+    float32 projection_transform[16] = {
+        1.0f / aspect_ratio, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, -1.0f,
+        0.0f, 0.0f, 1.0f, 1.0f,
+    };
     for (u8 i = 0; i < 5; i += 1) {
-        float32 transform[16] = {
-            1.0f / aspect_ratio, 0.0f, 0.0f, 0.0f,
-            0.0f, 1.0f, 0.0f, 0.0f,
-            0.0f, 0.0f, 1.0f, -1.0f,
-            i * 0.2f, 0.0f, 1.0f - i * 0.2f, 1.0f,
+        float32 model_transform[16] = {
+            0.8f, 0.0f, 0.0f, 0.0f,
+            0.0f, 0.8f, 0.0f, 0.0f,
+            0.0f, 0.0f, 0.8f, 0.0f,
+            i * 0.8f, 0.0f, 0.0f, 1.0f,
         };
-        glProgramUniformMatrix4fv(opengl_triangle_shader, u_transform, 1, false, transform);
-        glDrawArrays(GL_TRIANGLES, 0, len(triangle_vertices));
-    }
-
-    for (s8 i = 0; i > -5; i -= 1) {
-        float32 transform[16] = {
-            1.0f / aspect_ratio, 0.0f, 0.0f, 0.0f,
-            0.0f, 1.0f, 0.0f, 0.0f,
-            0.0f, 0.0f, 1.0f, -1.0f,
-            i * 0.2f, 0.0f, 1.0f + i * 0.2f, 1.0f,
-        };
-        glProgramUniformMatrix4fv(opengl_triangle_shader, u_transform, 1, false, transform);
+        float32 world_transform[16];
+        m4mul(world_transform, projection_transform, model_transform);
+        glProgramUniformMatrix4fv(opengl_triangle_shader, u_world_transform, 1, false, world_transform);
+        glProgramUniformMatrix4fv(opengl_triangle_shader, u_model_transform, 1, false, model_transform);
         glDrawArrays(GL_TRIANGLES, 0, len(triangle_vertices));
     }
 
