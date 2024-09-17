@@ -4,8 +4,16 @@
 
 #if defined(__TINYC__)
 #define COMPILER_TCC 1
+#define debug_break() __asm__ ("int3")
 #else
 #define COMPILER_TCC 0
+#endif
+
+#if defined(_MSC_VER)
+#define COMPILER_MSVC 1
+#define debug_break() __debugbreak()
+#else
+#define COMPILER_MSVC 0
 #endif
 
 #if defined(__x86_64__) || defined(_M_AMD64)
@@ -24,8 +32,9 @@
 #define size_of(T) sizeof(T)
 #define cast(T) (T)
 #define align_up(X, Y) ((X) + ((Y) - 1) & ~((Y) - 1))
+#define assert(X) do if (!(X)) debug_break(); while (0)
 #define len(X) (size_of(X) / size_of((X)[0]))
-#define str(X) ((string) {len(X) - 1, (u8*) (X)})
+#define str(X) (cast(string) {len(X) - 1, (u8*) (X)})
 #define min(X, Y) ((X) < (Y) ? (X) : (Y))
 #define max(X, Y) ((X) > (Y) ? (X) : (Y))
 
@@ -422,6 +431,10 @@ game_loop_end:
 
     ExitProcess(0);
 }
+
+#if COMPILER_MSVC
+int _fltused;
+#endif
 #endif
 
 #if RENDERER_OPENGL
@@ -716,6 +729,11 @@ static void gdi_clear(void) {
 void* memset(void*, int, u64);
 void* memset(void* a, int b, u64 c) {
     __asm__ ("rep stosb" :: "D" (a), "a" (b), "c" (c));
+    return a;
+}
+void* memcpy(void*, void*, u64);
+void* memcpy(void* a, void* b, u64 c) {
+    __asm__ ("rep movsb" :: "D" (a), "S" (b), "c" (c));
     return a;
 }
 #endif
