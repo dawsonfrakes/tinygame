@@ -278,8 +278,11 @@ extern(Windows) s64 window_proc(HWND hwnd, u32 message, u64 wParam, s64 lParam) 
             PostQuitMessage(0);
             return 0;
         }
+        case WM_SYSCOMMAND: {
+            if (wParam == SC_KEYMENU) return 0;
+            goto default;
+        }
         default: {
-            if (message == WM_SYSCOMMAND && wParam == SC_KEYMENU) return 0;
             return DefWindowProcW(hwnd, message, wParam, lParam);
         }
     }
