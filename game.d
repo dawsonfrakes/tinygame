@@ -213,85 +213,85 @@ extern extern(Windows) u32 DwmSetWindowAttribute(HWND, u32, const(void)*, u32);
 // winmm
 extern extern(Windows) u32 timeBeginPeriod(u32);
 
-void update_cursor_clip() {
-
-}
-
-void toggle_fullscreen() {
-    __gshared WINDOWPLACEMENT save_placement = {WINDOWPLACEMENT.sizeof};
-
-    u32 style = cast(u32) GetWindowLongPtrW(platform_hwnd, GWL_STYLE);
-    if (style & WS_OVERLAPPEDWINDOW) {
-        MONITORINFO mi = {MONITORINFO.sizeof};
-        GetMonitorInfoW(MonitorFromWindow(platform_hwnd, MONITOR_DEFAULTTOPRIMARY), &mi);
-
-        GetWindowPlacement(platform_hwnd, &save_placement);
-        SetWindowLongPtrW(platform_hwnd, GWL_STYLE, style & ~cast(u32) WS_OVERLAPPEDWINDOW);
-        SetWindowPos(platform_hwnd, HWND_TOP,
-            mi.rcMonitor.left, mi.rcMonitor.top,
-            mi.rcMonitor.right - mi.rcMonitor.left,
-            mi.rcMonitor.bottom - mi.rcMonitor.top,
-            SWP_FRAMECHANGED);
-    } else {
-        SetWindowLongPtrW(platform_hwnd, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
-        SetWindowPlacement(platform_hwnd, &save_placement);
-        SetWindowPos(platform_hwnd, null, 0, 0, 0, 0, SWP_NOSIZE |
-            SWP_NOMOVE | SWP_NOZORDER | SWP_FRAMECHANGED);
-    }
-}
-
-extern(Windows) s64 window_proc(HWND hwnd, u32 message, u64 wParam, s64 lParam) {
-    switch (message) {
-        case WM_PAINT: {
-            ValidateRect(hwnd, null);
-            return 0;
-        }
-        case WM_ERASEBKGND: {
-            return 1;
-        }
-        case WM_ACTIVATEAPP: {
-            if (wParam != 0) update_cursor_clip();
-            return 0;
-        }
-        case WM_SIZE: {
-            platform_screen_width = cast(u16) cast(u64) lParam;
-            platform_screen_height = cast(u16) (cast(u64) lParam >> 16);
-
-            opengl_resize();
-            return 0;
-        }
-        case WM_CREATE: {
-            platform_hwnd = hwnd;
-            platform_hdc = GetDC(hwnd);
-
-            s32 dark_mode = 1;
-            DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark_mode, dark_mode.sizeof);
-            s32 round_mode = DWMWCP_DONOTROUND;
-            DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &round_mode, round_mode.sizeof);
-
-            opengl_init();
-            return 0;
-        }
-        case WM_DESTROY: {
-            opengl_deinit();
-
-            PostQuitMessage(0);
-            return 0;
-        }
-        case WM_SYSCOMMAND: {
-            if (wParam == SC_KEYMENU) return 0;
-            goto default;
-        }
-        default: {
-            return DefWindowProcW(hwnd, message, wParam, lParam);
-        }
-    }
-}
-
 extern(Windows) noreturn WinMainCRTStartup() {
     platform_hinstance = GetModuleHandleW(null);
 
     bool sleep_is_granular = timeBeginPeriod(1) == 0;
+
+    static void update_cursor_clip() {
+
+    }
+
+    static void toggle_fullscreen() {
+        __gshared WINDOWPLACEMENT save_placement = {WINDOWPLACEMENT.sizeof};
+
+        u32 style = cast(u32) GetWindowLongPtrW(platform_hwnd, GWL_STYLE);
+        if (style & WS_OVERLAPPEDWINDOW) {
+            MONITORINFO mi = {MONITORINFO.sizeof};
+            GetMonitorInfoW(MonitorFromWindow(platform_hwnd, MONITOR_DEFAULTTOPRIMARY), &mi);
+
+            GetWindowPlacement(platform_hwnd, &save_placement);
+            SetWindowLongPtrW(platform_hwnd, GWL_STYLE, style & ~cast(u32) WS_OVERLAPPEDWINDOW);
+            SetWindowPos(platform_hwnd, HWND_TOP,
+                mi.rcMonitor.left, mi.rcMonitor.top,
+                mi.rcMonitor.right - mi.rcMonitor.left,
+                mi.rcMonitor.bottom - mi.rcMonitor.top,
+                SWP_FRAMECHANGED);
+        } else {
+            SetWindowLongPtrW(platform_hwnd, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
+            SetWindowPlacement(platform_hwnd, &save_placement);
+            SetWindowPos(platform_hwnd, null, 0, 0, 0, 0, SWP_NOSIZE |
+                SWP_NOMOVE | SWP_NOZORDER | SWP_FRAMECHANGED);
+        }
+    }
+
+    static extern(Windows) s64 window_proc(HWND hwnd, u32 message, u64 wParam, s64 lParam) {
+        switch (message) {
+            case WM_PAINT: {
+                ValidateRect(hwnd, null);
+                return 0;
+            }
+            case WM_ERASEBKGND: {
+                return 1;
+            }
+            case WM_ACTIVATEAPP: {
+                if (wParam != 0) update_cursor_clip();
+                return 0;
+            }
+            case WM_SIZE: {
+                platform_screen_width = cast(u16) cast(u64) lParam;
+                platform_screen_height = cast(u16) (cast(u64) lParam >> 16);
+
+                opengl_resize();
+                return 0;
+            }
+            case WM_CREATE: {
+                platform_hwnd = hwnd;
+                platform_hdc = GetDC(hwnd);
+
+                s32 dark_mode = 1;
+                DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark_mode, dark_mode.sizeof);
+                s32 round_mode = DWMWCP_DONOTROUND;
+                DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &round_mode, round_mode.sizeof);
+
+                opengl_init();
+                return 0;
+            }
+            case WM_DESTROY: {
+                opengl_deinit();
+
+                PostQuitMessage(0);
+                return 0;
+            }
+            case WM_SYSCOMMAND: {
+                if (wParam == SC_KEYMENU) return 0;
+                goto default;
+            }
+            default: {
+                return DefWindowProcW(hwnd, message, wParam, lParam);
+            }
+        }
+    }
 
     SetProcessDPIAware();
     WNDCLASSEXW wndclass;
@@ -411,15 +411,29 @@ enum GL_MAX_COLOR_TEXTURE_SAMPLES = 0x910E;
 enum GL_MAX_DEPTH_TEXTURE_SAMPLES = 0x910F;
 
 struct OpenGLProcs {
+    // 1.0
+    extern(System) void glEnable(u32);
+    extern(System) void glDisable(u32);
+    extern(System) void glViewport(s32, s32, u32, u32);
+    extern(System) void glGetIntegerv(u32, s32*);
+    extern(System) void glClear(u32);
+
     // 3.0
-    void function(u32, u32) glBindFramebuffer;
+    extern(System) void glBindFramebuffer(u32, u32);
+
     // 4.5
-    void function(u32, u32*) glCreateFramebuffers;
-    void function(u32, u32, s32, const(f32)*) glClearNamedFramebufferfv;
-    void function(u32, u32, u32, u32) glNamedFramebufferRenderbuffer;
-    void function(u32, u32, s32, s32, s32, s32, s32, s32, s32, s32, u32, u32) glBlitNamedFramebuffer;
-    void function(u32, u32*) glCreateRenderbuffers;
-    void function(u32, u32, u32, u32, u32) glNamedRenderbufferStorageMultisample;
+    extern(System) void glCreateFramebuffers(u32, u32*);
+    extern(System) void glClearNamedFramebufferfv(u32, u32, s32, const(f32)*);
+    extern(System) void glNamedFramebufferRenderbuffer(u32, u32, u32, u32);
+    extern(System) void glBlitNamedFramebuffer(u32, u32, s32, s32, s32, s32, s32, s32, s32, s32, u32, u32);
+    extern(System) void glCreateRenderbuffers(u32, u32*);
+    extern(System) void glNamedRenderbufferStorageMultisample(u32, u32, u32, u32, u32);
+}
+
+struct DynamicOpenGLProcs {
+    static foreach (member_name; __traits(allMembers, OpenGLProcs))
+        static if (!__traits(hasMember, mixin(__MODULE__), member_name))
+            mixin("alias ", member_name, " = OpenGLProcs.", member_name, ";");
 }
 
 version (Windows) {
@@ -431,9 +445,8 @@ enum WGL_CONTEXT_DEBUG_BIT_ARB = 0x0001;
 enum WGL_CONTEXT_CORE_PROFILE_BIT_ARB = 0x00000001;
 
 __gshared HGLRC opengl_ctx;
-static foreach (member_name; __traits(allMembers, OpenGLProcs)) {
-    mixin("__gshared extern(System) " ~ typeof(__traits(getMember, OpenGLProcs, member_name)).stringof ~ " " ~ member_name ~ ";");
-}
+static foreach (member_name; __traits(allMembers, DynamicOpenGLProcs))
+    mixin("__gshared " ~ (typeof(__traits(getMember, DynamicOpenGLProcs, member_name))*).stringof ~ " " ~ member_name ~ ";");
 
 void opengl_platform_init() {
     PIXELFORMATDESCRIPTOR pfd;
@@ -463,9 +476,8 @@ void opengl_platform_init() {
 
     wglDeleteContext(temp_ctx);
 
-    static foreach (member_name; __traits(allMembers, OpenGLProcs)) {
+    static foreach (member_name; __traits(allMembers, DynamicOpenGLProcs))
         mixin(member_name ~ " = cast(typeof(" ~ member_name ~ ")) wglGetProcAddress(\"" ~ member_name ~ "\");");
-    }
 }
 
 void opengl_platform_deinit() {
