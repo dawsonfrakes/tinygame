@@ -1,4 +1,4 @@
-#!dmd -betterC -run main.d
+#!dmd -betterC -run main
 
 enum DEVELOPER = true;
 
@@ -90,6 +90,7 @@ extern(Windows) noreturn WinMainCRTStartup() {
 }
 
 pragma(linkerDirective, "-subsystem:windows");
+pragma(linkerDirective, "-incremental:no");
 pragma(lib, "kernel32");
 pragma(lib, "user32");
 pragma(lib, "dwmapi");
