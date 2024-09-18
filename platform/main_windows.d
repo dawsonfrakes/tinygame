@@ -1,15 +1,34 @@
-#!dmd -betterC -run main
-
 enum DEVELOPER = true;
 
-version (Windows) {
-import windows;
+import basic.windows;
 
 __gshared HINSTANCE platform_hinstance = void;
 __gshared HWND platform_hwnd = void;
 __gshared HDC platform_hdc = void;
 __gshared ushort platform_screen_width = void;
 __gshared ushort platform_screen_height = void;
+
+static void toggle_fullscreen() {
+    __gshared WINDOWPLACEMENT save_placement = {WINDOWPLACEMENT.sizeof};
+
+    uint style = cast(uint) GetWindowLongPtrW(platform_hwnd, GWL_STYLE);
+    if (style & WS_OVERLAPPEDWINDOW) {
+        MONITORINFO mi = {MONITORINFO.sizeof};
+        GetMonitorInfoW(MonitorFromWindow(platform_hwnd, MONITOR_DEFAULTTOPRIMARY), &mi);
+        GetWindowPlacement(platform_hwnd, &save_placement);
+        SetWindowLongPtrW(platform_hwnd, GWL_STYLE, style & ~cast(uint) WS_OVERLAPPEDWINDOW);
+        SetWindowPos(platform_hwnd, HWND_TOP,
+            mi.rcMonitor.left, mi.rcMonitor.top,
+            mi.rcMonitor.right - mi.rcMonitor.left,
+            mi.rcMonitor.bottom - mi.rcMonitor.top,
+            SWP_FRAMECHANGED);
+    } else {
+        SetWindowLongPtrW(platform_hwnd, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
+        SetWindowPlacement(platform_hwnd, &save_placement);
+        SetWindowPos(platform_hwnd, null, 0, 0, 0, 0, SWP_NOSIZE |
+            SWP_NOMOVE | SWP_NOZORDER | SWP_FRAMECHANGED);
+    }
+}
 
 extern(Windows) noreturn WinMainCRTStartup() {
     platform_hinstance = GetModuleHandleW(null);
@@ -21,12 +40,12 @@ extern(Windows) noreturn WinMainCRTStartup() {
     wndclass.cbSize = WNDCLASSEXW.sizeof;
     wndclass.style = CS_OWNDC;
     wndclass.lpfnWndProc = (hwnd, message, wParam, lParam) {
-        void update_cursor_clip() {}
+        static void update_cursor_clip() {} // todo
 
         switch (message) {
             case WM_PAINT: ValidateRect(hwnd, null); return 0;
             case WM_ERASEBKGND: return 1;
-            case WM_ACTIVATEAPP: if (wParam) update_cursor_clip(); return 0;
+            case WM_ACTIVATEAPP: if (wParam != 0) update_cursor_clip(); return 0;
             case WM_SIZE:
                 platform_screen_width = cast(ushort) cast(size_t) lParam;
                 platform_screen_height = cast(ushort) (cast(size_t) lParam >> 16);
@@ -68,8 +87,6 @@ extern(Windows) noreturn WinMainCRTStartup() {
 
                     if (!repeat && (!sys || alt || wParam == VK_F10)) {
                         if (pressed) {
-                            void toggle_fullscreen() {}
-
                             if (wParam == VK_F4 && alt) DestroyWindow(platform_hwnd);
                             if (wParam == VK_F11 || (wParam == VK_RETURN && alt)) toggle_fullscreen();
                             if (DEVELOPER && wParam == VK_ESCAPE) DestroyWindow(platform_hwnd);
@@ -95,4 +112,3 @@ pragma(lib, "kernel32");
 pragma(lib, "user32");
 pragma(lib, "dwmapi");
 pragma(lib, "winmm");
-}
