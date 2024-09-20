@@ -13,7 +13,7 @@ if "%1"=="test" (
 ) else if "%1"=="debug" ( start remedybg main.exe
 ) else if "%1"=="clean" (
     del *.obj *.exe *.pdb 2>nul
-)
+) else if not "%1"=="" ( echo command '%1' not found & goto :error )
 
 :end
 exit /b
