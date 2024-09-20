@@ -33,6 +33,18 @@
 #define min(X, Y) ((X) < (Y) ? (X) : (Y))
 #define max(X, Y) ((X) > (Y) ? (X) : (Y))
 
+#if BUILD_MODE_DEBUG
+    #if COMPILER_TCC
+    #define assert(X) do if (!(X)) __asm__ ("int3"); while (0)
+    #elif COMPILER_MSVC
+    #define assert(X) do if (!(X)) __debugbreak(); while (0)
+    #else
+    #error assert not defined for this compiler
+    #endif
+#else
+#define assert(X) (cast(void) (X))
+#endif
+
 #if TARGET_CPU_ARCH_AMD64
 typedef signed char s8;
 typedef short s16;

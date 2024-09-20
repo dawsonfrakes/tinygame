@@ -1,5 +1,6 @@
 // kernel32
 typedef struct HINSTANCE__* HINSTANCE;
+typedef s64 (*PROC)(void);
 
 HINSTANCE GetModuleHandleW(u16*);
 void Sleep(u32);
@@ -121,6 +122,53 @@ s32 SetWindowPlacement(HWND, WINDOWPLACEMENT*);
 s32 SetWindowPos(HWND, HWND, s32, s32, s32, s32, u32);
 HMONITOR MonitorFromWindow(HWND, u32);
 s32 GetMonitorInfoW(HMONITOR, MONITORINFO*);
+
+// gdi32
+#define PFD_DOUBLEBUFFER 0x00000001
+#define PFD_DRAW_TO_WINDOW 0x00000004
+#define PFD_SUPPORT_OPENGL 0x00000020
+#define PFD_DEPTH_DONTCARE 0x20000000
+
+typedef struct {
+    u16 nSize;
+    u16 nVersion;
+    u32 dwFlags;
+    u8 iPixelType;
+    u8 cColorBits;
+    u8 cRedBits;
+    u8 cRedShift;
+    u8 cGreenBits;
+    u8 cGreenShift;
+    u8 cBlueBits;
+    u8 cBlueShift;
+    u8 cAlphaBits;
+    u8 cAlphaShift;
+    u8 cAccumBits;
+    u8 cAccumRedBits;
+    u8 cAccumGreenBits;
+    u8 cAccumBlueBits;
+    u8 cAccumAlphaBits;
+    u8 cDepthBits;
+    u8 cStencilBits;
+    u8 cAuxBuffers;
+    u8 iLayerType;
+    u8 bReserved;
+    u32 dwLayerMask;
+    u32 dwVisibleMask;
+    u32 dwDamageMask;
+} PIXELFORMATDESCRIPTOR;
+
+s32 ChoosePixelFormat(HDC, PIXELFORMATDESCRIPTOR*);
+s32 SetPixelFormat(HDC, s32, PIXELFORMATDESCRIPTOR*);
+s32 SwapBuffers(HDC);
+
+// opengl32
+typedef struct HGLRC__* HGLRC;
+
+HGLRC wglCreateContext(HDC);
+s32 wglDeleteContext(HGLRC);
+s32 wglMakeCurrent(HDC, HGLRC);
+PROC wglGetProcAddress(u8*);
 
 // dwmapi
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
