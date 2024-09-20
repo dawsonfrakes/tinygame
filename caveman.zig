@@ -82,6 +82,13 @@ const w = struct {
             pub const WM_SYSKEYDOWN = 0x0104;
             pub const WM_SYSKEYUP = 0x0105;
             pub const WM_SYSCOMMAND = 0x0112;
+            pub const GWL_STYLE = -16;
+            pub const HWND_TOP: ?HWND = @ptrFromInt(0);
+            pub const SWP_NOSIZE = 0x0001;
+            pub const SWP_NOMOVE = 0x0002;
+            pub const SWP_NOZORDER = 0x0004;
+            pub const SWP_FRAMECHANGED = 0x0020;
+            pub const MONITOR_DEFAULTTOPRIMARY = 0x00000001;
             pub const SC_KEYMENU = 0xF100;
             pub const VK_RETURN = 0x0D;
             pub const VK_ESCAPE = 0x1B;
@@ -98,14 +105,14 @@ const w = struct {
             pub const HMONITOR = *opaque {};
             pub const WNDPROC = *const fn (?HWND, c_uint, usize, isize) callconv(WINAPI) isize;
             pub const POINT = extern struct {
-                x: c_int,
-                y: c_int,
+                x: c_long,
+                y: c_long,
             };
             pub const RECT = extern struct {
-                left: c_int,
-                top: c_int,
-                right: c_int,
-                bottom: c_int,
+                left: c_long,
+                top: c_long,
+                right: c_long,
+                bottom: c_long,
             };
             pub const WNDCLASSEXW = extern struct {
                 cbSize: c_uint,
@@ -130,12 +137,27 @@ const w = struct {
                 pt: POINT,
                 lPrivate: c_ulong,
             };
+            pub const WINDOWPLACEMENT = extern struct {
+                length: c_uint,
+                flags: c_uint,
+                showCmd: c_uint,
+                ptMinPosition: POINT,
+                ptMaxPosition: POINT,
+                rcNormalPosition: RECT,
+                rcDevice: RECT,
+            };
+            pub const MONITORINFO = extern struct {
+                cbSize: c_ulong,
+                rcMonitor: RECT,
+                rcWork: RECT,
+                dwFlags: c_ulong,
+            };
 
             pub extern "user32" fn SetProcessDPIAware() callconv(WINAPI) c_int;
             pub extern "user32" fn LoadIconW(?kernel32.HINSTANCE, ?[*:0]align(1) const u16) callconv(WINAPI) ?HICON;
             pub extern "user32" fn LoadCursorW(?kernel32.HINSTANCE, ?[*:0]align(1) const u16) callconv(WINAPI) ?HCURSOR;
             pub extern "user32" fn RegisterClassExW(?*const WNDCLASSEXW) callconv(WINAPI) c_ushort;
-            pub extern "user32" fn CreateWindowExW(c_uint, ?[*:0]const u16, ?[*:0]const u16, c_uint, c_int, c_int, c_int, c_int, ?HWND, ?HMENU, ?kernel32.HINSTANCE, ?*anyopaque) callconv(WINAPI) ?HWND;
+            pub extern "user32" fn CreateWindowExW(c_ulong, ?[*:0]const u16, ?[*:0]const u16, c_ulong, c_int, c_int, c_int, c_int, ?HWND, ?HMENU, ?kernel32.HINSTANCE, ?*anyopaque) callconv(WINAPI) ?HWND;
             pub extern "user32" fn PeekMessageW(?*MSG, ?HWND, c_uint, c_uint, c_uint) callconv(WINAPI) c_int;
             pub extern "user32" fn TranslateMessage(?*const MSG) callconv(WINAPI) c_int;
             pub extern "user32" fn DispatchMessageW(?*const MSG) callconv(WINAPI) isize;
@@ -144,6 +166,13 @@ const w = struct {
             pub extern "user32" fn DestroyWindow(?HWND) callconv(WINAPI) c_int;
             pub extern "user32" fn DefWindowProcW(?HWND, c_uint, usize, isize) callconv(WINAPI) isize;
             pub extern "user32" fn PostQuitMessage(c_int) callconv(WINAPI) void;
+            pub extern "user32" fn GetWindowLongPtrW(?HWND, c_int) callconv(WINAPI) isize;
+            pub extern "user32" fn SetWindowLongPtrW(?HWND, c_int, isize) callconv(WINAPI) isize;
+            pub extern "user32" fn GetWindowPlacement(?HWND, ?*WINDOWPLACEMENT) callconv(WINAPI) c_int;
+            pub extern "user32" fn SetWindowPlacement(?HWND, ?*const WINDOWPLACEMENT) callconv(WINAPI) c_int;
+            pub extern "user32" fn SetWindowPos(?HWND, ?HWND, c_int, c_int, c_int, c_int, c_uint) callconv(WINAPI) c_int;
+            pub extern "user32" fn MonitorFromWindow(?HWND, c_ulong) callconv(WINAPI) ?HMONITOR;
+            pub extern "user32" fn GetMonitorInfoW(?HMONITOR, ?*MONITORINFO) callconv(WINAPI) c_int;
         };
 
         pub const dwmapi = struct {
@@ -178,7 +207,38 @@ pub usingnamespace switch (core.os_tag) {
 
         fn updateCursorClip() void {}
 
-        fn toggleFullscreen() void {}
+        fn toggleFullscreen() void {
+            const S = struct {
+                var save_placement = core.zeroInit(w.WINDOWPLACEMENT, .{
+                    .length = @sizeOf(w.WINDOWPLACEMENT),
+                });
+            };
+
+            const style: u32 = @intCast(w.GetWindowLongPtrW(platform.hwnd, w.GWL_STYLE));
+            if (style & w.WS_OVERLAPPEDWINDOW != 0) {
+                var mi = core.zeroInit(w.MONITORINFO, .{
+                    .cbSize = @sizeOf(w.MONITORINFO),
+                });
+                _ = w.GetMonitorInfoW(w.MonitorFromWindow(platform.hwnd, w.MONITOR_DEFAULTTOPRIMARY), &mi);
+
+                _ = w.GetWindowPlacement(platform.hwnd, &S.save_placement);
+                _ = w.SetWindowLongPtrW(platform.hwnd, w.GWL_STYLE, style & ~@as(u32, w.WS_OVERLAPPEDWINDOW));
+                _ = w.SetWindowPos(
+                    platform.hwnd,
+                    w.HWND_TOP,
+                    mi.rcMonitor.left,
+                    mi.rcMonitor.top,
+                    mi.rcMonitor.right - mi.rcMonitor.left,
+                    mi.rcMonitor.bottom - mi.rcMonitor.top,
+                    w.SWP_FRAMECHANGED,
+                );
+            } else {
+                _ = w.SetWindowLongPtrW(platform.hwnd, w.GWL_STYLE, style | w.WS_OVERLAPPEDWINDOW);
+                _ = w.SetWindowPlacement(platform.hwnd, &S.save_placement);
+                _ = w.SetWindowPos(platform.hwnd, null, 0, 0, 0, 0, w.SWP_NOSIZE |
+                    w.SWP_NOMOVE | w.SWP_NOZORDER | w.SWP_FRAMECHANGED);
+            }
+        }
 
         fn windowProc(hwnd: ?w.HWND, message: c_uint, wParam: usize, lParam: isize) callconv(w.WINAPI) isize {
             switch (message) {
@@ -254,10 +314,10 @@ pub usingnamespace switch (core.os_tag) {
                     _ = w.TranslateMessage(&msg);
                     switch (msg.message) {
                         w.WM_KEYDOWN, w.WM_KEYUP, w.WM_SYSKEYDOWN, w.WM_SYSKEYUP => {
-                            const pressed = msg.message & 1 << 31 == 0;
-                            const repeat = pressed and msg.message & 1 << 30 != 0;
+                            const pressed = msg.lParam & 1 << 31 == 0;
+                            const repeat = pressed and msg.lParam & 1 << 30 != 0;
                             const sys = msg.message == w.WM_SYSKEYDOWN or msg.message == w.WM_SYSKEYUP;
-                            const alt = sys and msg.message & 1 << 29 != 0;
+                            const alt = sys and msg.lParam & 1 << 29 != 0;
 
                             if (!repeat and (!sys or alt or msg.wParam == w.VK_F10)) {
                                 if (pressed) {
