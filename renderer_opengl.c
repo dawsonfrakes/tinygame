@@ -139,6 +139,11 @@ static u32 opengl_main_fbo;
 static u32 opengl_main_fbo_color0;
 static u32 opengl_main_fbo_depth;
 
+typedef struct {
+    v3 position;
+    v4 color;
+} OpenGLTriangleVertex;
+
 static u32 opengl_triangle_vao;
 static u32 opengl_triangle_shader;
 
@@ -150,10 +155,10 @@ static void opengl_init(void) {
     glCreateRenderbuffers(1, &opengl_main_fbo_depth);
 
     {
-        float32 triangle_vertices[] = {
-            -0.5f, -0.5f, 0.0f,
-            +0.5f, -0.5f, 0.0f,
-            +0.0f, +0.5f, 0.0f,
+        OpenGLTriangleVertex triangle_vertices[] = {
+            {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+            {{+0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
+            {{+0.0f, +0.5f, 0.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
         };
         u8 triangle_indices[] = {0, 1, 2};
 
@@ -169,12 +174,17 @@ static void opengl_init(void) {
         glCreateVertexArrays(1, &vao);
         glVertexArrayElementBuffer(vao, ebo);
         u32 vbo_binding = 0;
-        glVertexArrayVertexBuffer(vao, vbo_binding, vbo, 0, size_of(float32) * 3);
+        glVertexArrayVertexBuffer(vao, vbo_binding, vbo, 0, size_of(OpenGLTriangleVertex));
 
         u32 position_attrib = 0;
         glEnableVertexArrayAttrib(vao, position_attrib);
         glVertexArrayAttribBinding(vao, position_attrib, vbo_binding);
-        glVertexArrayAttribFormat(vao, position_attrib, 3, GL_FLOAT, false, 0);
+        glVertexArrayAttribFormat(vao, position_attrib, 3, GL_FLOAT, false, offset_of(OpenGLTriangleVertex, position));
+
+        u32 color_attrib = 1;
+        glEnableVertexArrayAttrib(vao, color_attrib);
+        glVertexArrayAttribBinding(vao, color_attrib, vbo_binding);
+        glVertexArrayAttribFormat(vao, color_attrib, 4, GL_FLOAT, false, offset_of(OpenGLTriangleVertex, color));
 
         opengl_triangle_vao = vao;
     }
@@ -182,8 +192,11 @@ static void opengl_init(void) {
         u8* vsrc =
             "#version 450\n"
             "layout(location = 0) in vec3 a_position;\n"
+            "layout(location = 1) in vec4 a_color;\n"
+            "layout(location = 1) out vec4 f_color;\n"
             "void main() {\n"
             "   gl_Position = vec4(a_position, 1.0);\n"
+            "   f_color = a_color;\n"
             "}\n";
         u32 vshader = glCreateShader(GL_VERTEX_SHADER);
         glShaderSource(vshader, 1, &vsrc, null);
@@ -191,9 +204,10 @@ static void opengl_init(void) {
 
         u8* fsrc =
             "#version 450\n"
+            "layout(location = 1) in vec4 f_color;\n"
             "layout(location = 0) out vec4 color;\n"
             "void main() {\n"
-            "   color = vec4(1.0, 0.0, 1.0, 1.0);\n"
+            "   color = f_color;\n"
             "}\n";
         u32 fshader = glCreateShader(GL_FRAGMENT_SHADER);
         glShaderSource(fshader, 1, &fsrc, null);
