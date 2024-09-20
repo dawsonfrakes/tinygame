@@ -11,6 +11,7 @@ if "%1"=="test" (
      -stack:0x1000000,0x1000000 -heap:0,0 || goto :error
 ) else if "%1"=="run" ( start main.exe
 ) else if "%1"=="debug" ( start remedybg main.exe
+) else if "%1"=="doc" ( start qrenderdoc main.exe
 ) else if "%1"=="clean" (
     del *.obj *.exe *.pdb 2>nul
 ) else if not "%1"=="" ( echo command '%1' not found & goto :error )

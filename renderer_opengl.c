@@ -67,7 +67,8 @@
     X(void, glVertexArrayAttribBinding, u32, u32, u32) \
     X(void, glVertexArrayAttribFormat, u32, u32, s32, u32, bool, u32) \
     X(void, glCreateBuffers, u32, u32*) \
-    X(void, glNamedBufferData, u32, u64, void*, u32)
+    X(void, glNamedBufferData, u32, u64, void*, u32) \
+    X(void, glProgramUniformMatrix4fv, u32, s32, u32, bool, float32*)
 
 #if TARGET_OS_WINDOWS
 #define WGL_CONTEXT_MAJOR_VERSION_ARB 0x2091
@@ -143,10 +144,121 @@ typedef struct {
     v3 position;
     v2 texcoord;
     v4 color;
-} OpenGLTriangleVertex;
+} OpenGLUIVertex;
 
-static u32 opengl_triangle_vao;
-static u32 opengl_triangle_shader;
+typedef struct {
+    u32 element_gl_type;
+    u16 offset;
+    u8 element_count;
+    u8 binding;
+} OpenGLMeshAttrib;
+
+typedef struct {
+    u64 vertices_size;
+    u64 indices_size;
+    OpenGLMeshAttrib attribs[16];
+    void* vertices;
+    void* indices;
+    u32 indices_count;
+    u8 attribs_count;
+    u8 vertices_element_size;
+    u8 indices_element_size;
+
+    u32 vao;
+    u32 vbo;
+    u32 ebo;
+} OpenGLMesh;
+
+static u32 opengl_ui_shader;
+
+static u32 opengl_square_vao;
+
+static OpenGLUIVertex triangle_vertices[] = {
+    {{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+    {{+0.5f, -0.5f, 0.0f}, {1.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
+    {{+0.0f, +0.5f, 0.0f}, {0.5f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
+};
+static u8 triangle_indices[] = {0, 1, 2};
+
+static OpenGLMesh triangle_mesh = {
+    .vertices_size = size_of(triangle_vertices),
+    .indices_size = size_of(triangle_indices),
+    .attribs[0].element_gl_type = GL_FLOAT,
+    .attribs[0].offset = offset_of(OpenGLUIVertex, position),
+    .attribs[0].element_count = 3,
+    .attribs[0].binding = 0,
+    .attribs[1].element_gl_type = GL_FLOAT,
+    .attribs[1].offset = offset_of(OpenGLUIVertex, texcoord),
+    .attribs[1].element_count = 2,
+    .attribs[1].binding = 0,
+    .attribs[2].element_gl_type = GL_FLOAT,
+    .attribs[2].offset = offset_of(OpenGLUIVertex, color),
+    .attribs[2].element_count = 4,
+    .attribs[2].binding = 0,
+    .vertices = triangle_vertices,
+    .indices = triangle_indices,
+    .indices_count = 3,
+    .attribs_count = 3,
+    .vertices_element_size = size_of(OpenGLUIVertex),
+    .indices_element_size = size_of(triangle_indices[0]),
+};
+
+static OpenGLUIVertex square_vertices[] = {
+    {{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+    {{+0.5f, -0.5f, 0.0f}, {1.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
+    {{+0.5f, +0.5f, 0.0f}, {1.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
+    {{-0.5f, +0.5f, 0.0f}, {0.0f, 1.0f}, {1.0f, 0.0f, 1.0f, 1.0f}},
+};
+static u8 square_indices[] = {0, 1, 2, 2, 3, 0};
+
+static OpenGLMesh square_mesh = {
+    .vertices_size = size_of(square_vertices),
+    .indices_size = size_of(square_indices),
+    .attribs[0].element_gl_type = GL_FLOAT,
+    .attribs[0].offset = offset_of(OpenGLUIVertex, position),
+    .attribs[0].element_count = 3,
+    .attribs[0].binding = 0,
+    .attribs[1].element_gl_type = GL_FLOAT,
+    .attribs[1].offset = offset_of(OpenGLUIVertex, texcoord),
+    .attribs[1].element_count = 2,
+    .attribs[1].binding = 0,
+    .attribs[2].element_gl_type = GL_FLOAT,
+    .attribs[2].offset = offset_of(OpenGLUIVertex, color),
+    .attribs[2].element_count = 4,
+    .attribs[2].binding = 0,
+    .vertices = square_vertices,
+    .indices = square_indices,
+    .indices_count = 6,
+    .attribs_count = 3,
+    .vertices_element_size = size_of(OpenGLUIVertex),
+    .indices_element_size = size_of(square_indices[0]),
+};
+
+static OpenGLMesh* opengl_meshes[] = {
+    &triangle_mesh,
+    &square_mesh,
+};
+
+static void opengl_upload_mesh_to_gpu(OpenGLMesh* mesh) {
+    glCreateBuffers(1, &mesh->vbo);
+    glNamedBufferData(mesh->vbo, mesh->vertices_size, mesh->vertices, GL_STATIC_DRAW);
+    glCreateBuffers(1, &mesh->ebo);
+    glNamedBufferData(mesh->ebo, mesh->indices_size, mesh->indices, GL_STATIC_DRAW);
+
+    glCreateVertexArrays(1, &mesh->vao);
+    glVertexArrayElementBuffer(mesh->vao, mesh->ebo);
+    u32 vbo_binding = 0;
+    glVertexArrayVertexBuffer(mesh->vao, vbo_binding, mesh->vbo, 0, mesh->vertices_element_size);
+
+    for (u32 attrib = 0; attrib < mesh->attribs_count; attrib += 1) {
+        glEnableVertexArrayAttrib(mesh->vao, attrib);
+        glVertexArrayAttribBinding(mesh->vao, attrib, mesh->attribs[attrib].binding);
+        glVertexArrayAttribFormat(mesh->vao, attrib,
+            mesh->attribs[attrib].element_count,
+            mesh->attribs[attrib].element_gl_type,
+            false, mesh->attribs[attrib].offset);
+    }
+}
 
 static void opengl_init(void) {
     opengl_platform_init();
@@ -155,44 +267,8 @@ static void opengl_init(void) {
     glCreateRenderbuffers(1, &opengl_main_fbo_color0);
     glCreateRenderbuffers(1, &opengl_main_fbo_depth);
 
-    {
-        OpenGLTriangleVertex triangle_vertices[] = {
-            {{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
-            {{+0.5f, -0.5f, 0.0f}, {1.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 1.0f}},
-            {{+0.0f, +0.5f, 0.0f}, {0.5f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}},
-        };
-        u8 triangle_indices[] = {0, 1, 2};
-
-        u32 vbo;
-        glCreateBuffers(1, &vbo);
-        glNamedBufferData(vbo, size_of(triangle_vertices), triangle_vertices, GL_STATIC_DRAW);
-
-        u32 ebo;
-        glCreateBuffers(1, &ebo);
-        glNamedBufferData(ebo, size_of(triangle_indices), triangle_indices, GL_STATIC_DRAW);
-
-        u32 vao;
-        glCreateVertexArrays(1, &vao);
-        glVertexArrayElementBuffer(vao, ebo);
-        u32 vbo_binding = 0;
-        glVertexArrayVertexBuffer(vao, vbo_binding, vbo, 0, size_of(OpenGLTriangleVertex));
-
-        u32 position_attrib = 0;
-        glEnableVertexArrayAttrib(vao, position_attrib);
-        glVertexArrayAttribBinding(vao, position_attrib, vbo_binding);
-        glVertexArrayAttribFormat(vao, position_attrib, 3, GL_FLOAT, false, offset_of(OpenGLTriangleVertex, position));
-
-        u32 texcoord_attrib = 1;
-        glEnableVertexArrayAttrib(vao, texcoord_attrib);
-        glVertexArrayAttribBinding(vao, texcoord_attrib, vbo_binding);
-        glVertexArrayAttribFormat(vao, texcoord_attrib, 2, GL_FLOAT, false, offset_of(OpenGLTriangleVertex, texcoord));
-
-        u32 color_attrib = 2;
-        glEnableVertexArrayAttrib(vao, color_attrib);
-        glVertexArrayAttribBinding(vao, color_attrib, vbo_binding);
-        glVertexArrayAttribFormat(vao, color_attrib, 4, GL_FLOAT, false, offset_of(OpenGLTriangleVertex, color));
-
-        opengl_triangle_vao = vao;
+    for (OpenGLMesh** mesh = opengl_meshes; mesh < opengl_meshes + len(opengl_meshes); mesh += 1) {
+        opengl_upload_mesh_to_gpu(*mesh);
     }
     {
         u8* vsrc =
@@ -202,8 +278,9 @@ static void opengl_init(void) {
             "layout(location = 2) in vec4 a_color;\n"
             "layout(location = 1) out vec2 f_texcoord;\n"
             "layout(location = 2) out vec4 f_color;\n"
+            "layout(location = 0) uniform mat4 u_transform;\n"
             "void main() {\n"
-            "   gl_Position = vec4(a_position, 1.0);\n"
+            "   gl_Position = u_transform * vec4(a_position, 1.0);\n"
             "   f_color = a_color;\n"
             "   f_texcoord = a_texcoord;\n"
             "}\n";
@@ -217,7 +294,8 @@ static void opengl_init(void) {
             "layout(location = 2) in vec4 f_color;\n"
             "layout(location = 0) out vec4 color;\n"
             "void main() {\n"
-            "   color = vec4(f_texcoord, 0.0, 1.0);\n"
+            "   color = f_color;\n"
+            "   // color = vec4(f_texcoord, 0.0, 1.0);\n"
             "}\n";
         u32 fshader = glCreateShader(GL_FRAGMENT_SHADER);
         glShaderSource(fshader, 1, &fsrc, null);
@@ -233,7 +311,7 @@ static void opengl_init(void) {
         glDeleteShader(fshader);
         glDeleteShader(vshader);
 
-        opengl_triangle_shader = program;
+        opengl_ui_shader = program;
     }
 }
 
@@ -268,9 +346,29 @@ static void opengl_present(void) {
     glClearNamedFramebufferfv(opengl_main_fbo, GL_DEPTH, 0, &clear_depth);
     glBindFramebuffer(GL_FRAMEBUFFER, opengl_main_fbo);
 
-    glUseProgram(opengl_triangle_shader);
-    glBindVertexArray(opengl_triangle_vao);
-    glDrawElements(GL_TRIANGLES, 3, GL_UNSIGNED_BYTE, cast(void*) 0);
+    glUseProgram(opengl_ui_shader);
+    {
+        static m4 transforms[] = {
+            {{
+                1.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 1.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 1.0f, 0.0f,
+                -0.5f, 0.0f, 0.0f, 1.0f,
+            }},
+            {{
+                1.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 1.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 1.0f, 0.0f,
+                0.5f, 0.0f, 0.0f, 1.0f,
+            }},
+        };
+        for (OpenGLMesh** mesh = opengl_meshes; mesh < opengl_meshes + len(opengl_meshes); mesh += 1) {
+            glBindVertexArray((*mesh)->vao);
+            u32 u_transform = 0;
+            glProgramUniformMatrix4fv(opengl_ui_shader, u_transform, 1, false, transforms[mesh - opengl_meshes].e);
+            glDrawElements(GL_TRIANGLES, (*mesh)->indices_count, (*mesh)->indices_element_size == 1 ? GL_UNSIGNED_BYTE : 0, cast(void*) 0);
+        }
+    }
 
     // note(dfra): fixes intel default framebuffer resize bug
     glBindFramebuffer(GL_FRAMEBUFFER, 0);

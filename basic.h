@@ -81,6 +81,10 @@ typedef struct {
 } v4;
 
 typedef struct {
+    float32 e[16];
+} m4;
+
+typedef struct {
     u64 count;
     u8* data;
 } string;
