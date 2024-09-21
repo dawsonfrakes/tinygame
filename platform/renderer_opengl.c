@@ -14,6 +14,7 @@ GL11_FUNCTIONS
 HGLRC opengl_ctx;
 
 #define X(RET, NAME, ...) RET (*NAME)(__VA_ARGS__);
+GL20_FUNCTIONS
 GL30_FUNCTIONS
 GL45_FUNCTIONS
 #undef X
@@ -48,6 +49,7 @@ void opengl_platform_init(void) {
     wglDeleteContext(temp_ctx);
 
 #define X(RET, NAME, ...) NAME = cast(RET (*)(__VA_ARGS__)) wglGetProcAddress(#NAME);
+    GL20_FUNCTIONS
     GL30_FUNCTIONS
     GL45_FUNCTIONS
 #undef X
@@ -65,19 +67,22 @@ void opengl_platform_present(void) {
 
 typedef struct {
     v3 position;
+    v2 texcoord;
 } GameVertex;
 
 GameVertex game_triangle_vertices[] = {
-    {{-0.5f, -0.5f, 0.0f}},
-    {{+0.5f, -0.5f, 0.0f}},
-    {{+0.0f, +0.5f, 0.0f}},
+    {{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f}},
+    {{+0.5f, -0.5f, 0.0f}, {1.0f, 0.0f}},
+    {{+0.0f, +0.5f, 0.0f}, {0.5f, 1.0f}},
 };
+u8 game_triangle_indices[] = {0, 1, 2};
 
 u32 opengl_main_fbo;
 u32 opengl_main_fbo_color0;
 u32 opengl_main_fbo_depth;
 
-u32 opengl_triangles_vao;
+u32 opengl_triangle_shader;
+u32 opengl_triangle_vao;
 
 void opengl_init(void) {
     opengl_platform_init();
@@ -91,9 +96,14 @@ void opengl_init(void) {
         glCreateBuffers(1, &vbo);
         glNamedBufferData(vbo, size_of(game_triangle_vertices), game_triangle_vertices, GL_STATIC_DRAW);
 
+        u32 ebo;
+        glCreateBuffers(1, &ebo);
+        glNamedBufferData(ebo, size_of(game_triangle_indices), game_triangle_indices, GL_STATIC_DRAW);
+
         u32 vao;
         glCreateVertexArrays(1, &vao);
         u32 vbo_binding = 0;
+        glVertexArrayElementBuffer(vao, ebo);
         glVertexArrayVertexBuffer(vao, vbo_binding, vbo, 0, size_of(GameVertex));
 
         u32 position_attrib = 0;
@@ -101,7 +111,49 @@ void opengl_init(void) {
         glVertexArrayAttribBinding(vao, position_attrib, vbo_binding);
         glVertexArrayAttribFormat(vao, position_attrib, 3, GL_FLOAT, false, offset_of(GameVertex, position));
 
-        opengl_triangles_vao = vao;
+        u32 texcoord_attrib = 1;
+        glEnableVertexArrayAttrib(vao, texcoord_attrib);
+        glVertexArrayAttribBinding(vao, texcoord_attrib, vbo_binding);
+        glVertexArrayAttribFormat(vao, texcoord_attrib, 2, GL_FLOAT, false, offset_of(GameVertex, texcoord));
+
+        opengl_triangle_vao = vao;
+    }
+    {
+        u8* vsrc =
+            "#version 450\n"
+            "layout(location = 0) in vec3 a_position;\n"
+            "layout(location = 1) in vec2 a_texcoord;\n"
+            "layout(location = 1) out vec2 f_texcoord;\n"
+            "void main() {\n"
+            "   gl_Position = vec4(a_position, 1.0);\n"
+            "   f_texcoord = a_texcoord;\n"
+            "}\n";
+        u32 vshader = glCreateShader(GL_VERTEX_SHADER);
+        glShaderSource(vshader, 1, &vsrc, null);
+        glCompileShader(vshader);
+
+        u8* fsrc =
+            "#version 450\n"
+            "layout(location = 1) in vec2 f_texcoord;\n"
+            "layout(location = 0) out vec4 color;\n"
+            "void main() {\n"
+            "   color = vec4(f_texcoord, 1.0, 1.0);\n"
+            "}\n";
+        u32 fshader = glCreateShader(GL_FRAGMENT_SHADER);
+        glShaderSource(fshader, 1, &fsrc, null);
+        glCompileShader(fshader);
+
+        u32 program = glCreateProgram();
+        glAttachShader(program, vshader);
+        glAttachShader(program, fshader);
+        glLinkProgram(program);
+        glDetachShader(program, fshader);
+        glDetachShader(program, vshader);
+
+        glDeleteShader(fshader);
+        glDeleteShader(vshader);
+
+        opengl_triangle_shader = program;
     }
 }
 
@@ -136,8 +188,9 @@ void opengl_present(void) {
     glClearNamedFramebufferfv(opengl_main_fbo, GL_DEPTH, 0, &clear_depth);
     glBindFramebuffer(GL_FRAMEBUFFER, opengl_main_fbo);
 
-    glBindVertexArray(opengl_triangles_vao);
-    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glUseProgram(opengl_triangle_shader);
+    glBindVertexArray(opengl_triangle_vao);
+    glDrawElements(GL_TRIANGLES, 3, GL_UNSIGNED_BYTE, cast(void*) 0);
 
     // note(dfra): fixes intel default framebuffer resize bug
     glBindFramebuffer(GL_FRAMEBUFFER, 0);

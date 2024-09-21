@@ -43,11 +43,27 @@
 
 // 1.1
 #define GL11_FUNCTIONS \
-    X(void, glDrawArrays, u32, s32, u32)
+    X(void, glDrawArrays, u32, s32, u32) \
+    X(void, glDrawElements, u32, u32, u32, void*)
 
 // 1.5
 #define GL_STREAM_DRAW 0x88E0
 #define GL_STATIC_DRAW 0x88E4
+
+// 2.0
+#define GL_FRAGMENT_SHADER 0x8B30
+#define GL_VERTEX_SHADER 0x8B31
+
+#define GL20_FUNCTIONS \
+    X(u32, glCreateProgram, void) \
+    X(void, glDeleteShader, u32) \
+    X(void, glAttachShader, u32, u32) \
+    X(void, glDetachShader, u32, u32) \
+    X(void, glLinkProgram, u32) \
+    X(void, glUseProgram, u32) \
+    X(u32, glCreateShader, u32) \
+    X(void, glShaderSource, u32, u32, u8**, s32*) \
+    X(void, glCompileShader, u32)
 
 // 3.0
 #define GL_RGBA16F 0x881A
@@ -75,6 +91,7 @@
     X(void, glCreateRenderbuffers, u32, u32*) \
     X(void, glNamedRenderbufferStorageMultisample, u32, u32, u32, u32, u32) \
     X(void, glCreateVertexArrays, u32, u32*) \
+    X(void, glVertexArrayElementBuffer, u32, u32) \
     X(void, glVertexArrayVertexBuffer, u32, u32, u32, s64, u32) \
     X(void, glEnableVertexArrayAttrib, u32, u32) \
     X(void, glVertexArrayAttribBinding, u32, u32, u32) \
