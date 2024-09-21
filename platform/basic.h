@@ -27,6 +27,8 @@
 #define offset_of(T, F) (cast(u64) &(cast(T*) 0)->F)
 #define len(X) (size_of(X) / size_of((X)[0]))
 #define str(X) (cast(string) {len(X) - 1, cast(u8*) (X)})
+#define min(X, Y) ((X) < (Y) ? (X) : (Y))
+#define max(X, Y) ((X) > (Y) ? (X) : (Y))
 
 #define null (cast(void*) 0)
 #define true (cast(_Bool) 1)

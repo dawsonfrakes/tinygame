@@ -12,6 +12,11 @@ GL10_FUNCTIONS
 
 HGLRC opengl_ctx;
 
+#define X(RET, NAME, ...) RET (*NAME)(__VA_ARGS__);
+GL30_FUNCTIONS
+GL45_FUNCTIONS
+#undef X
+
 void opengl_platform_init(void) {
     static PIXELFORMATDESCRIPTOR pfd = {0};
     pfd.nSize = size_of(PIXELFORMATDESCRIPTOR);
@@ -40,6 +45,11 @@ void opengl_platform_init(void) {
     wglMakeCurrent(platform_hdc, opengl_ctx);
 
     wglDeleteContext(temp_ctx);
+
+#define X(RET, NAME, ...) NAME = cast(RET (*)(__VA_ARGS__)) wglGetProcAddress(#NAME);
+    GL30_FUNCTIONS
+    GL45_FUNCTIONS
+#undef X
 }
 
 void opengl_platform_deinit(void) {
@@ -52,8 +62,16 @@ void opengl_platform_present(void) {
 }
 #endif
 
+u32 opengl_main_fbo;
+u32 opengl_main_fbo_color0;
+u32 opengl_main_fbo_depth;
+
 void opengl_init(void) {
     opengl_platform_init();
+
+    glCreateFramebuffers(1, &opengl_main_fbo);
+    glCreateRenderbuffers(1, &opengl_main_fbo_color0);
+    glCreateRenderbuffers(1, &opengl_main_fbo_depth);
 }
 
 void opengl_deinit(void) {
@@ -61,12 +79,42 @@ void opengl_deinit(void) {
 }
 
 void opengl_resize(void) {
+    s32 fbo_color_samples_max;
+    glGetIntegerv(GL_MAX_COLOR_TEXTURE_SAMPLES, &fbo_color_samples_max);
+    s32 fbo_depth_samples_max;
+    glGetIntegerv(GL_MAX_DEPTH_TEXTURE_SAMPLES, &fbo_depth_samples_max);
+    u32 fbo_samples = cast(u32) min(fbo_color_samples_max, fbo_depth_samples_max);
 
+    if (platform_screen_width && platform_screen_height) {
+        glNamedRenderbufferStorageMultisample(opengl_main_fbo_color0, fbo_samples,
+            GL_RGBA16F, platform_screen_width, platform_screen_height);
+        glNamedFramebufferRenderbuffer(opengl_main_fbo, GL_COLOR_ATTACHMENT0,
+            GL_RENDERBUFFER, opengl_main_fbo_color0);
+
+        glNamedRenderbufferStorageMultisample(opengl_main_fbo_depth, fbo_samples,
+            GL_DEPTH_COMPONENT32F, platform_screen_width, platform_screen_height);
+        glNamedFramebufferRenderbuffer(opengl_main_fbo, GL_DEPTH_ATTACHMENT,
+            GL_RENDERBUFFER, opengl_main_fbo_depth);
+    }
 }
 
 void opengl_present(void) {
-    glClearColor(0.6f, 0.2f, 0.2f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
+    static float32 clear_color0[] = {0.6f, 0.2f, 0.2f, 1.0f};
+    glClearNamedFramebufferfv(opengl_main_fbo, GL_COLOR, 0, clear_color0);
+    static float32 clear_depth = 0.0f;
+    glClearNamedFramebufferfv(opengl_main_fbo, GL_DEPTH, 0, &clear_depth);
+    glBindFramebuffer(GL_FRAMEBUFFER, opengl_main_fbo);
+
+    // note(dfra): fixes intel default framebuffer resize bug
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glClear(0);
+
+    glEnable(GL_FRAMEBUFFER_SRGB);
+    glBlitNamedFramebuffer(opengl_main_fbo, 0,
+        0, 0, platform_screen_width, platform_screen_height,
+        0, 0, platform_screen_width, platform_screen_height,
+        GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glDisable(GL_FRAMEBUFFER_SRGB);
 
     opengl_platform_present();
 }

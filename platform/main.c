@@ -7,12 +7,10 @@
 u16 platform_screen_width;
 u16 platform_screen_height;
 
-#if RENDERER_OPENGL
 void opengl_init(void);
 void opengl_deinit(void);
 void opengl_resize(void);
 void opengl_present(void);
-#endif
 
 #if OS_WINDOWS
 #include "windows.min.h"
