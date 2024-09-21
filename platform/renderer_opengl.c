@@ -81,6 +81,7 @@ u32 opengl_main_fbo;
 u32 opengl_main_fbo_color0;
 u32 opengl_main_fbo_depth;
 
+u32 opengl_tophat_texture;
 u32 opengl_triangle_shader;
 u32 opengl_triangle_vao;
 
@@ -136,8 +137,9 @@ void opengl_init(void) {
             "#version 450\n"
             "layout(location = 1) in vec2 f_texcoord;\n"
             "layout(location = 0) out vec4 color;\n"
+            "layout(location = 0) uniform sampler2D u_texture;\n"
             "void main() {\n"
-            "   color = vec4(f_texcoord, 1.0, 1.0);\n"
+            "   color = texture(u_texture, f_texcoord);\n"
             "}\n";
         u32 fshader = glCreateShader(GL_FRAGMENT_SHADER);
         glShaderSource(fshader, 1, &fsrc, null);
@@ -154,6 +156,30 @@ void opengl_init(void) {
         glDeleteShader(vshader);
 
         opengl_triangle_shader = program;
+    }
+    {
+        u32 texture;
+        glCreateTextures(GL_TEXTURE_2D, 1, &texture);
+        glTextureStorage2D(texture, 1, GL_RGBA8, 512, 512);
+        glTextureParameteri(texture, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
+        HANDLE hfile = CreateFileA("textures/tophat.bmp", GENERIC_READ, 0, null, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, null);
+        if (hfile != INVALID_HANDLE_VALUE) {
+            s64 bmp_file_size;
+            GetFileSizeEx(hfile, &bmp_file_size);
+
+            u8* bmp_file = cast(u8*) VirtualAlloc(0, cast(u32) bmp_file_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+            ReadFile(hfile, bmp_file, cast(u32) bmp_file_size, null, null);
+
+            CloseHandle(hfile);
+
+            u8* bmp_image_data = bmp_file + *cast(u32*) (bmp_file + 10);
+            glTextureSubImage2D(texture, 0, 0, 0, 512, 512, GL_BGR, GL_UNSIGNED_BYTE, bmp_image_data);
+
+            VirtualFree(bmp_file, 0, MEM_RELEASE);
+        }
+
+        opengl_tophat_texture = texture;
     }
 }
 
@@ -187,7 +213,9 @@ void opengl_present(void) {
     static float32 clear_depth = 0.0f;
     glClearNamedFramebufferfv(opengl_main_fbo, GL_DEPTH, 0, &clear_depth);
     glBindFramebuffer(GL_FRAMEBUFFER, opengl_main_fbo);
+    glViewport(0, 0, platform_screen_width, platform_screen_height);
 
+    glBindTextureUnit(0, opengl_tophat_texture);
     glUseProgram(opengl_triangle_shader);
     glBindVertexArray(opengl_triangle_vao);
     glDrawElements(GL_TRIANGLES, 3, GL_UNSIGNED_BYTE, cast(void*) 0);

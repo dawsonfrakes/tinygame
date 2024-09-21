@@ -42,9 +42,15 @@
     X(void, glClear, u32)
 
 // 1.1
+#define GL_RGBA8 0x8058
+
 #define GL11_FUNCTIONS \
     X(void, glDrawArrays, u32, s32, u32) \
     X(void, glDrawElements, u32, u32, u32, void*)
+
+// 1.2
+#define GL_BGR 0x80E0
+#define GL_BGRA 0x80E1
 
 // 1.5
 #define GL_STREAM_DRAW 0x88E0
@@ -97,4 +103,9 @@
     X(void, glVertexArrayAttribBinding, u32, u32, u32) \
     X(void, glVertexArrayAttribFormat, u32, u32, s32, u32, bool, u32) \
     X(void, glCreateBuffers, u32, u32*) \
-    X(void, glNamedBufferData, u32, u64, void*, u32)
+    X(void, glNamedBufferData, u32, u64, void*, u32) \
+    X(void, glCreateTextures, u32, u32, u32*) \
+    X(void, glTextureStorage2D, u32, u32, u32, u32, u32) \
+    X(void, glTextureSubImage2D, u32, s32, s32, s32, u32, u32, u32, u32, void*) \
+    X(void, glTextureParameteri, u32, u32, s32) \
+    X(void, glBindTextureUnit, u32, u32)

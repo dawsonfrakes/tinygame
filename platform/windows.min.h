@@ -1,8 +1,24 @@
 // kernel32
+#define GENERIC_READ 0x80000000
+#define OPEN_EXISTING 3
+#define FILE_ATTRIBUTE_NORMAL 0x80
+#define INVALID_HANDLE_VALUE (cast(HANDLE) -1)
+#define MEM_COMMIT 0x00001000
+#define MEM_RESERVE 0x00002000
+#define MEM_RELEASE 0x00008000
+#define PAGE_READWRITE 0x04
+
+typedef void* HANDLE;
 typedef struct HINSTANCE__* HINSTANCE;
 typedef s64 (*PROC)(void);
 
 HINSTANCE GetModuleHandleW(u16*);
+HANDLE CreateFileA(u8*, u32, u32, void*, u32, u32, HANDLE);
+s32 CloseHandle(HANDLE);
+s32 GetFileSizeEx(HANDLE, s64*);
+void* VirtualAlloc(void*, u64, u32, u32);
+s32 VirtualFree(void*, u64, u32);
+s32 ReadFile(HANDLE, void*, u32, u32*, void*);
 void Sleep(u32);
 void ExitProcess(u32);
 
