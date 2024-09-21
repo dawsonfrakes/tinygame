@@ -64,6 +64,24 @@ typedef float float32;
 typedef double float64;
 
 typedef struct {
+    float32 x;
+    float32 y;
+} v2;
+
+typedef struct {
+    float32 x;
+    float32 y;
+    float32 z;
+} v3;
+
+typedef struct {
+    float32 x;
+    float32 y;
+    float32 z;
+    float32 w;
+} v4;
+
+typedef struct {
     u64 count;
     u8* data;
 } string;

@@ -8,6 +8,7 @@
 
 #define X(RET, NAME, ...) RET NAME(__VA_ARGS__);
 GL10_FUNCTIONS
+GL11_FUNCTIONS
 #undef X
 
 HGLRC opengl_ctx;
@@ -62,9 +63,21 @@ void opengl_platform_present(void) {
 }
 #endif
 
+typedef struct {
+    v3 position;
+} GameVertex;
+
+GameVertex game_triangle_vertices[] = {
+    {{-0.5f, -0.5f, 0.0f}},
+    {{+0.5f, -0.5f, 0.0f}},
+    {{+0.0f, +0.5f, 0.0f}},
+};
+
 u32 opengl_main_fbo;
 u32 opengl_main_fbo_color0;
 u32 opengl_main_fbo_depth;
+
+u32 opengl_triangles_vao;
 
 void opengl_init(void) {
     opengl_platform_init();
@@ -72,6 +85,24 @@ void opengl_init(void) {
     glCreateFramebuffers(1, &opengl_main_fbo);
     glCreateRenderbuffers(1, &opengl_main_fbo_color0);
     glCreateRenderbuffers(1, &opengl_main_fbo_depth);
+
+    {
+        u32 vbo;
+        glCreateBuffers(1, &vbo);
+        glNamedBufferData(vbo, size_of(game_triangle_vertices), game_triangle_vertices, GL_STATIC_DRAW);
+
+        u32 vao;
+        glCreateVertexArrays(1, &vao);
+        u32 vbo_binding = 0;
+        glVertexArrayVertexBuffer(vao, vbo_binding, vbo, 0, size_of(GameVertex));
+
+        u32 position_attrib = 0;
+        glEnableVertexArrayAttrib(vao, position_attrib);
+        glVertexArrayAttribBinding(vao, position_attrib, vbo_binding);
+        glVertexArrayAttribFormat(vao, position_attrib, 3, GL_FLOAT, false, offset_of(GameVertex, position));
+
+        opengl_triangles_vao = vao;
+    }
 }
 
 void opengl_deinit(void) {
@@ -104,6 +135,9 @@ void opengl_present(void) {
     static float32 clear_depth = 0.0f;
     glClearNamedFramebufferfv(opengl_main_fbo, GL_DEPTH, 0, &clear_depth);
     glBindFramebuffer(GL_FRAMEBUFFER, opengl_main_fbo);
+
+    glBindVertexArray(opengl_triangles_vao);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
 
     // note(dfra): fixes intel default framebuffer resize bug
     glBindFramebuffer(GL_FRAMEBUFFER, 0);

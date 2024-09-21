@@ -41,6 +41,14 @@
     X(void, glViewport, s32, s32, u32, u32) \
     X(void, glClear, u32)
 
+// 1.1
+#define GL11_FUNCTIONS \
+    X(void, glDrawArrays, u32, s32, u32)
+
+// 1.5
+#define GL_STREAM_DRAW 0x88E0
+#define GL_STATIC_DRAW 0x88E4
+
 // 3.0
 #define GL_RGBA16F 0x881A
 #define GL_DEPTH_COMPONENT32F 0x8CAC
@@ -65,4 +73,11 @@
     X(void, glClearNamedFramebufferfv, u32, u32, s32, float32*) \
     X(void, glBlitNamedFramebuffer, u32, u32, s32, s32, s32, s32, s32, s32, s32, s32, u32, u32) \
     X(void, glCreateRenderbuffers, u32, u32*) \
-    X(void, glNamedRenderbufferStorageMultisample, u32, u32, u32, u32, u32)
+    X(void, glNamedRenderbufferStorageMultisample, u32, u32, u32, u32, u32) \
+    X(void, glCreateVertexArrays, u32, u32*) \
+    X(void, glVertexArrayVertexBuffer, u32, u32, u32, s64, u32) \
+    X(void, glEnableVertexArrayAttrib, u32, u32) \
+    X(void, glVertexArrayAttribBinding, u32, u32, u32) \
+    X(void, glVertexArrayAttribFormat, u32, u32, s32, u32, bool, u32) \
+    X(void, glCreateBuffers, u32, u32*) \
+    X(void, glNamedBufferData, u32, u64, void*, u32)
