@@ -10,6 +10,12 @@
 #define CPU_AMD64 0
 #endif
 
+#if defined(_MSC_VER)
+#define COMPILER_MSVC 1
+#else
+#define COMPILER_MSVC 0
+#endif
+
 #if defined(__TINYC__)
 #define COMPILER_TCC 1
 #else
@@ -25,6 +31,18 @@
 #define null (cast(void*) 0)
 #define true (cast(_Bool) 1)
 #define false (cast(_Bool) 0)
+
+#if DEBUG
+    #if COMPILER_TCC && CPU_AMD64
+    #define assert(X) do if (!(X)) __asm__ ("int3"); while (0)
+    #elif COMPILER_MSVC
+    #define assert(X) do if (!(X)) __debugbreak(); while (0)
+    #else
+    #error assert not defined
+    #endif
+#else
+#define assert(X) (cast(void) (X))
+#endif
 
 #if CPU_AMD64
 typedef signed char s8;

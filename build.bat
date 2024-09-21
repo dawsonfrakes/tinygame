@@ -1,5 +1,6 @@
 @echo off
 
+rem tcc -impdef {kernel32,user32,gdi32,...}.dll
 tcc -DWinMainCRTStartup=_start -nostdlib platform\main.c^
  -lkernel32 -luser32 -lgdi32 -lopengl32 -ldwmapi -lwinmm^
  -Wl,-subsystem=windows || goto :error

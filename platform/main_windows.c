@@ -1,3 +1,18 @@
+void (*windows_renderer_init)(void);
+void (*windows_renderer_deinit)(void);
+void (*windows_renderer_resize)(void);
+void (*windows_renderer_present)(void);
+
+void windows_select_renderer(void) {
+    if (RENDERER_OPENGL) {
+        windows_renderer_init = opengl_init;
+        windows_renderer_deinit = opengl_deinit;
+        windows_renderer_resize = opengl_resize;
+        windows_renderer_present = opengl_present;
+        return;
+    }
+}
+
 void windows_update_cursor_clip(void) {}
 
 void windows_toggle_fullscreen(void) {
@@ -33,6 +48,8 @@ s64 windows_window_proc(HWND hwnd, u32 message, u64 wParam, s64 lParam) {
         case WM_SIZE:
             platform_screen_width = cast(u16) cast(u64) lParam;
             platform_screen_height = cast(u16) (cast(u64) lParam >> 16);
+
+            windows_renderer_resize();
             return 0;
         case WM_CREATE:
             platform_hwnd = hwnd;
@@ -42,8 +59,14 @@ s64 windows_window_proc(HWND hwnd, u32 message, u64 wParam, s64 lParam) {
             DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark_mode, 4);
             s32 round_mode = DWMWCP_DONOTROUND;
             DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &round_mode, 4);
+
+            windows_renderer_init();
             return 0;
-        case WM_DESTROY: PostQuitMessage(0); return 0;
+        case WM_DESTROY:
+            windows_renderer_deinit();
+
+            PostQuitMessage(0);
+            return 0;
         case WM_SYSCOMMAND: if (wParam == SC_KEYMENU) return 0; else {} /* fallthrough */
         default: return DefWindowProcW(hwnd, message, wParam, lParam);
     }
@@ -53,6 +76,8 @@ void WinMainCRTStartup(void) {
     platform_hinstance = GetModuleHandleW(null);
 
     bool sleep_is_granular = timeBeginPeriod(1) == 0;
+
+    windows_select_renderer();
 
     SetProcessDPIAware();
     static WNDCLASSEXW wndclass = {0};
@@ -97,6 +122,8 @@ void WinMainCRTStartup(void) {
             }
         }
 
+        windows_renderer_present();
+
         if (sleep_is_granular) {
             Sleep(1);
         }
@@ -105,3 +132,7 @@ game_loop_end:
 
     ExitProcess(0);
 }
+
+#if COMPILER_MSVC
+int _fltused;
+#endif
