@@ -10,9 +10,13 @@
 
 typedef void* HANDLE;
 typedef struct HINSTANCE__* HINSTANCE;
+typedef HINSTANCE HMODULE;
 typedef s64 (*PROC)(void);
 
 HINSTANCE GetModuleHandleW(u16*);
+HMODULE LoadLibraryA(u8*);
+s32 FreeLibrary(HMODULE);
+PROC GetProcAddress(HMODULE, u8*);
 HANDLE CreateFileA(u8*, u32, u32, void*, u32, u32, HANDLE);
 s32 CloseHandle(HANDLE);
 s32 GetFileSizeEx(HANDLE, s64*);

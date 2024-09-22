@@ -4,13 +4,20 @@ void (*windows_renderer_resize)(void);
 void (*windows_renderer_present)(void);
 
 void windows_select_renderer(void) {
-    if (RENDERER_OPENGL) {
-        windows_renderer_init = opengl_init;
-        windows_renderer_deinit = opengl_deinit;
-        windows_renderer_resize = opengl_resize;
-        windows_renderer_present = opengl_present;
-        return;
-    }
+#if RENDERER_OPENGL
+    windows_renderer_init = opengl_init;
+    windows_renderer_deinit = opengl_deinit;
+    windows_renderer_resize = opengl_resize;
+    windows_renderer_present = opengl_present;
+    return;
+#endif
+#if RENDERER_VULKAN
+    windows_renderer_init = vulkan_init;
+    windows_renderer_deinit = vulkan_deinit;
+    windows_renderer_resize = vulkan_resize;
+    windows_renderer_present = vulkan_present;
+    return;
+#endif
 }
 
 void windows_update_cursor_clip(void) {}
