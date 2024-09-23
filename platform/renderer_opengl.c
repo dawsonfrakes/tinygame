@@ -17,6 +17,7 @@ HGLRC opengl_ctx;
 GL20_FUNCTIONS
 GL30_FUNCTIONS
 GL45_FUNCTIONS
+GL_BINDLESS_TEXTURE_FUNCTIONS
 #undef X
 
 void opengl_platform_init(void) {
@@ -52,6 +53,7 @@ void opengl_platform_init(void) {
     GL20_FUNCTIONS
     GL30_FUNCTIONS
     GL45_FUNCTIONS
+    GL_BINDLESS_TEXTURE_FUNCTIONS
 #undef X
 }
 
@@ -82,6 +84,7 @@ u32 opengl_main_fbo_color0;
 u32 opengl_main_fbo_depth;
 
 u32 opengl_tophat_texture;
+u64 opengl_tophat_texture_handle;
 u32 opengl_triangle_shader;
 u32 opengl_triangle_vao;
 
@@ -122,6 +125,7 @@ void opengl_init(void) {
     {
         u8* vsrc =
             "#version 450\n"
+            "#extension GL_ARB_bindless_texture : enable\n"
             "layout(location = 0) in vec3 a_position;\n"
             "layout(location = 1) in vec2 a_texcoord;\n"
             "layout(location = 1) out vec2 f_texcoord;\n"
@@ -135,11 +139,12 @@ void opengl_init(void) {
 
         u8* fsrc =
             "#version 450\n"
+            "#extension GL_ARB_bindless_texture : enable\n"
             "layout(location = 1) in vec2 f_texcoord;\n"
             "layout(location = 0) out vec4 color;\n"
-            "layout(location = 0) uniform sampler2D u_texture;\n"
+            "layout(location = 0) uniform uvec2 u_texture;\n"
             "void main() {\n"
-            "   color = texture(u_texture, f_texcoord);\n"
+            "   color = texture(sampler2D(u_texture), f_texcoord);\n"
             "}\n";
         u32 fshader = glCreateShader(GL_FRAGMENT_SHADER);
         glShaderSource(fshader, 1, &fsrc, null);
@@ -181,6 +186,9 @@ void opengl_init(void) {
 
         opengl_tophat_texture = texture;
     }
+
+    opengl_tophat_texture_handle = glGetTextureHandleARB(opengl_tophat_texture);
+    glMakeTextureHandleResidentARB(opengl_tophat_texture_handle);
 }
 
 void opengl_deinit(void) {
@@ -215,7 +223,7 @@ void opengl_present(void) {
     glBindFramebuffer(GL_FRAMEBUFFER, opengl_main_fbo);
     glViewport(0, 0, platform_screen_width, platform_screen_height);
 
-    glBindTextureUnit(0, opengl_tophat_texture);
+    glProgramUniformHandleui64ARB(opengl_triangle_shader, 0, opengl_tophat_texture_handle);
     glUseProgram(opengl_triangle_shader);
     glBindVertexArray(opengl_triangle_vao);
     glDrawElements(GL_TRIANGLES, 3, GL_UNSIGNED_BYTE, cast(void*) 0);

@@ -109,3 +109,10 @@
     X(void, glTextureSubImage2D, u32, s32, s32, s32, u32, u32, u32, u32, void*) \
     X(void, glTextureParameteri, u32, u32, s32) \
     X(void, glBindTextureUnit, u32, u32)
+
+// GL_ARB_bindless_texture
+#define GL_BINDLESS_TEXTURE_FUNCTIONS \
+    X(u64, glGetTextureHandleARB, u32) \
+    X(void, glMakeTextureHandleResidentARB, u64) \
+    X(void, glMakeTextureHandleNonResidentARB, u64) \
+    X(void, glProgramUniformHandleui64ARB, u32, s32, u64)
