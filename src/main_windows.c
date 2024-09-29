@@ -4,13 +4,57 @@ KERNEL32_FUNCTIONS
 #define X(RET, NAME, ...) RET (*NAME)(__VA_ARGS__);
 // required
 USER32_FUNCTIONS
+#if RENDERER_OPENGL
+GDI32_FUNCTIONS
+OPENGL32_FUNCTIONS
+GL10_FUNCTIONS
+#endif
 // optional
 DWMAPI_FUNCTIONS
 WINMM_FUNCTIONS
 #undef X
 
-void windows_update_cursor_clip(void) {}
-void windows_toggle_fullscreen(void) {}
+void (*windows_renderer_init)(void);
+void (*windows_renderer_deinit)(void);
+void (*windows_renderer_resize)(void);
+void (*windows_renderer_present)(void);
+
+void windows_select_renderer(void) {
+#if RENDERER_OPENGL
+    windows_renderer_init = opengl_init;
+    windows_renderer_deinit = opengl_deinit;
+    windows_renderer_resize = opengl_resize;
+    windows_renderer_present = opengl_present;
+    return;
+#endif
+}
+
+void windows_update_cursor_clip(void) {
+
+}
+
+void windows_toggle_fullscreen(void) {
+    static WINDOWPLACEMENT save_placement = {size_of(WINDOWPLACEMENT)};
+
+    u32 style = cast(u32) GetWindowLongPtrW(windows_hwnd, GWL_STYLE);
+    if (style & WS_OVERLAPPEDWINDOW) {
+        MONITORINFO mi = {size_of(MONITORINFO)};
+        GetMonitorInfoW(MonitorFromWindow(windows_hwnd, MONITOR_DEFAULTTOPRIMARY), &mi);
+
+        GetWindowPlacement(windows_hwnd, &save_placement);
+        SetWindowLongPtrW(windows_hwnd, GWL_STYLE, style & ~cast(u32) WS_OVERLAPPEDWINDOW);
+        SetWindowPos(windows_hwnd, HWND_TOP,
+            mi.rcMonitor.left, mi.rcMonitor.top,
+            mi.rcMonitor.right - mi.rcMonitor.left,
+            mi.rcMonitor.bottom - mi.rcMonitor.top,
+            SWP_FRAMECHANGED);
+    } else {
+        SetWindowLongPtrW(windows_hwnd, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
+        SetWindowPlacement(windows_hwnd, &save_placement);
+        SetWindowPos(windows_hwnd, null, 0, 0, 0, 0, SWP_NOSIZE |
+            SWP_NOMOVE | SWP_NOZORDER | SWP_FRAMECHANGED);
+    }
+}
 
 s64 windows_window_proc(HWND hwnd, u32 message, u64 wParam, s64 lParam) {
     switch (message) {
@@ -28,6 +72,8 @@ s64 windows_window_proc(HWND hwnd, u32 message, u64 wParam, s64 lParam) {
         case WM_SIZE: {
             platform_screen_width = cast(u16) cast(u64) lParam;
             platform_screen_height = cast(u16) (cast(u64) lParam >> 16);
+
+            windows_renderer_resize();
             return 0;
         }
         case WM_CREATE: {
@@ -40,9 +86,13 @@ s64 windows_window_proc(HWND hwnd, u32 message, u64 wParam, s64 lParam) {
                 s32 round_mode = DWMWCP_DONOTROUND;
                 DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &round_mode, size_of(round_mode));
             }
+
+            windows_renderer_init();
             return 0;
         }
         case WM_DESTROY: {
+            windows_renderer_deinit();
+
             PostQuitMessage(0);
             return 0;
         }
@@ -62,6 +112,13 @@ void WinMainCRTStartup(void) {
 #define X(RET, NAME, ...) NAME = (RET (*)(__VA_ARGS__)) GetProcAddress(lib, #NAME);
         lib = LoadLibraryA("USER32");
         USER32_FUNCTIONS
+#if RENDERER_OPENGL
+        lib = LoadLibraryA("GDI32");
+        GDI32_FUNCTIONS
+        lib = LoadLibraryA("OPENGL32");
+        OPENGL32_FUNCTIONS
+        GL10_FUNCTIONS
+#endif
         lib = LoadLibraryA("DWMAPI");
         DWMAPI_FUNCTIONS
         lib = LoadLibraryA("WINMM");
@@ -72,6 +129,8 @@ void WinMainCRTStartup(void) {
     windows_hinstance = GetModuleHandleW(null);
 
     bool sleep_is_granular = timeBeginPeriod && timeBeginPeriod(1) == 0;
+
+    windows_select_renderer();
 
     SetProcessDPIAware();
     WNDCLASSEXW wndclass = {0};
@@ -119,6 +178,8 @@ void WinMainCRTStartup(void) {
                 }
             }
         }
+
+        windows_renderer_present();
 
         if (sleep_is_granular) {
             Sleep(1);
