@@ -8,6 +8,14 @@ DWMAPI_FUNCTIONS
 WINMM_FUNCTIONS
 #undef X
 
+void update_cursor_clip(void) {
+
+}
+
+void toggle_fullscreen(void) {
+
+}
+
 s64 window_proc(HWND hwnd, u32 message, u64 wParam, s64 lParam) {
 	switch (message) {
 	case WM_PAINT: {
@@ -16,6 +24,15 @@ s64 window_proc(HWND hwnd, u32 message, u64 wParam, s64 lParam) {
 	}
 	case WM_ERASEBKGND: {
 		return 1;
+	}
+	case WM_ACTIVATEAPP: {
+		if (wParam != 0) update_cursor_clip();
+		return 0;
+	}
+	case WM_SIZE: {
+		platform_screen_width = cast(u16) cast(u64) lParam;
+		platform_screen_height = cast(u16) (cast(u64) lParam >> 16);
+		return 0;
 	}
 	case WM_CREATE: {
 		windows_hwnd = hwnd;

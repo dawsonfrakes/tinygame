@@ -24,9 +24,11 @@ typedef s64 (*PROC)(void);
 #define PM_REMOVE 0x0001
 #define WM_CREATE 0x0001
 #define WM_DESTROY 0x0002
+#define WM_SIZE 0x0005
 #define WM_PAINT 0x000F
 #define WM_QUIT 0x0012
 #define WM_ERASEBKGND 0x0014
+#define WM_ACTIVATEAPP 0x001C
 
 typedef struct HDC__* HDC;
 typedef struct HWND__* HWND;
