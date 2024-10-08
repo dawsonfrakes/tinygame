@@ -4,11 +4,31 @@ KERNEL32_FUNCTIONS
 #define X(RET, NAME, ...) RET (*NAME)(__VA_ARGS__);
 USER32_FUNCTIONS
 // optional
+DWMAPI_FUNCTIONS
 WINMM_FUNCTIONS
 #undef X
 
 s64 window_proc(HWND hwnd, u32 message, u64 wParam, s64 lParam) {
 	switch (message) {
+	case WM_PAINT: {
+		ValidateRect(hwnd, null);
+		return 0;
+	}
+	case WM_ERASEBKGND: {
+		return 1;
+	}
+	case WM_CREATE: {
+		windows_hwnd = hwnd;
+		windows_hdc = GetDC(hwnd);
+
+		if (DwmSetWindowAttribute) {
+			s32 dark_mode = 1;
+			DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark_mode, size_of(type_of(dark_mode)));
+			s32 round_mode = DWMWCP_DONOTROUND;
+			DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &round_mode, size_of(type_of(round_mode)));
+		}
+		return 0;
+	}
 	case WM_DESTROY: {
 		PostQuitMessage(0);
 		return 0;
@@ -26,6 +46,8 @@ extern "C" void WinMainCRTStartup(void) {
 		// @todo assert required functions loaded
 		lib = LoadLibraryW(cast(u16*) L"USER32");
 		USER32_FUNCTIONS
+		lib = LoadLibraryW(cast(u16*) L"DWMAPI");
+		DWMAPI_FUNCTIONS
 		lib = LoadLibraryW(cast(u16*) L"WINMM");
 		WINMM_FUNCTIONS
 #undef X
@@ -50,9 +72,25 @@ extern "C" void WinMainCRTStartup(void) {
 		CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
 		null, null, windows_hinstance, null);
 
-	if (sleep_is_granular) {
-		Sleep(1);
+	for (;;) {
+		MSG msg;
+		while (PeekMessageW(&msg, null, 0, 0, PM_REMOVE)) {
+			TranslateMessage(&msg);
+			switch (msg.message) {
+			case WM_QUIT: {
+				goto game_loop_end;
+			}
+			default: {
+				DispatchMessageW(&msg);
+			}
+			}
+		}
+
+		if (sleep_is_granular) {
+			Sleep(1);
+		}
 	}
+game_loop_end:
 
 	ExitProcess(0);
 }
