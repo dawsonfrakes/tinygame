@@ -29,6 +29,24 @@ typedef s64 (*PROC)(void);
 #define WM_QUIT 0x0012
 #define WM_ERASEBKGND 0x0014
 #define WM_ACTIVATEAPP 0x001C
+#define WM_KEYDOWN 0x0100
+#define WM_KEYUP 0x0101
+#define WM_SYSKEYDOWN 0x0104
+#define WM_SYSKEYUP 0x0105
+#define WM_SYSCOMMAND 0x0112
+#define SC_KEYMENU 0xF100
+#define GWL_STYLE (-16)
+#define HWND_TOP (cast(HWND) 0)
+#define SWP_NOSIZE 0x0001
+#define SWP_NOMOVE 0x0002
+#define SWP_NOZORDER 0x0004
+#define SWP_FRAMECHANGED 0x0020
+#define MONITOR_DEFAULTTOPRIMARY 0x00000001
+#define VK_RETURN 0x0D
+#define VK_ESCAPE 0x1B
+#define VK_F4 0x73
+#define VK_F10 0x79
+#define VK_F11 0x7A
 
 typedef struct HDC__* HDC;
 typedef struct HWND__* HWND;
@@ -71,6 +89,21 @@ typedef struct {
 	POINT pt;
 	u32 lPrivate;
 } MSG;
+typedef struct {
+	u32 length;
+	u32 flags;
+	u32 showCmd;
+	POINT ptMinPosition;
+	POINT ptMaxPosition;
+	RECT rcNormalPosition;
+	RECT rcDevice;
+} WINDOWPLACEMENT;
+typedef struct {
+	u32 cbSize;
+	RECT rcMonitor;
+	RECT rcWork;
+	u32 dwFlags;
+} MONITORINFO;
 
 #define USER32_FUNCTIONS \
 	X(s32, SetProcessDPIAware, void) \
@@ -83,8 +116,65 @@ typedef struct {
 	X(s64, DispatchMessageW, MSG*) \
 	X(HDC, GetDC, HWND) \
 	X(s32, ValidateRect, HWND, RECT*) \
+	X(s32, DestroyWindow, HWND) \
+	X(s64, GetWindowLongPtrW, HWND, s32) \
+	X(s64, SetWindowLongPtrW, HWND, s32, s64) \
+	X(s32, GetWindowPlacement, HWND, WINDOWPLACEMENT*) \
+	X(s32, SetWindowPlacement, HWND, WINDOWPLACEMENT*) \
+	X(s32, SetWindowPos, HWND, HWND, s32, s32, s32, s32, u32) \
+	X(HMONITOR, MonitorFromWindow, HWND, u32) \
+	X(s32, GetMonitorInfoW, HMONITOR, MONITORINFO*) \
 	X(s64, DefWindowProcW, HWND, u32, u64, s64) \
 	X(void, PostQuitMessage, s32)
+
+// gdi32
+#define PFD_DOUBLEBUFFER 0x00000001
+#define PFD_DRAW_TO_WINDOW 0x00000004
+#define PFD_SUPPORT_OPENGL 0x00000020
+#define PFD_DEPTH_DONTCARE 0x20000000
+
+typedef struct {
+	u16 nSize;
+	u16 nVersion;
+	u32 dwFlags;
+	u8 iPixelType;
+	u8 cColorBits;
+	u8 cRedBits;
+	u8 cRedShift;
+	u8 cGreenBits;
+	u8 cGreenShift;
+	u8 cBlueBits;
+	u8 cBlueShift;
+	u8 cAlphaBits;
+	u8 cAlphaShift;
+	u8 cAccumBits;
+	u8 cAccumRedBits;
+	u8 cAccumGreenBits;
+	u8 cAccumBlueBits;
+	u8 cAccumAlphaBits;
+	u8 cDepthBits;
+	u8 cStencilBits;
+	u8 cAuxBuffers;
+	u8 iLayerType;
+	u8 bReserved;
+	u32 dwLayerMask;
+	u32 dwVisibleMask;
+	u32 dwDamageMask;
+} PIXELFORMATDESCRIPTOR;
+
+#define GDI32_FUNCTIONS \
+	X(s32, ChoosePixelFormat, HDC, PIXELFORMATDESCRIPTOR*) \
+	X(s32, SetPixelFormat, HDC, s32, PIXELFORMATDESCRIPTOR*) \
+	X(s32, SwapBuffers, HDC)
+
+// opengl32
+typedef struct HGLRC__* HGLRC;
+
+#define OPENGL32_FUNCTIONS \
+	X(HGLRC, wglCreateContext, HDC) \
+	X(s32, wglDeleteContext, HGLRC) \
+	X(s32, wglMakeCurrent, HDC, HGLRC) \
+	X(PROC, wglGetProcAddress, u8*)
 
 // dwmapi
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20

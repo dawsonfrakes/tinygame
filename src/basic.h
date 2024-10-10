@@ -10,12 +10,24 @@
 #define TARGET_OS_WINDOWS 0
 #endif
 
+#if defined(_MSC_VER)
+#define COMPILER_MSVC 1
+#else
+#define COMPILER_MSVC 0
+#endif
+
 #define cast(T) (T)
 #define size_of(T) sizeof(T)
-#define type_of(X) decltype(X)
 #define offset_of(T, F) (cast(u64) &(cast(T*) 0)->F)
+#define align_of(T) offset_of(struct { u8 x; T t; }, t)
+#define len(X) (size_of(X) / size_of((X)[0]))
+#define str(X) ((string) {len(X) - 1, (X)})
+#define min(X, Y) ((X) < (Y) ? (X) : (Y))
+#define max(X, Y) ((X) > (Y) ? (X) : (Y))
 
-#define null nullptr
+#define null (cast(void*) 0)
+#define true (cast(_Bool) 1)
+#define false (cast(_Bool) 0)
 
 #if TARGET_CPU_ARCH_AMD64
 typedef signed char s8;
@@ -34,3 +46,26 @@ typedef u32 b32;
 
 typedef float f32;
 typedef double f64;
+
+typedef struct {
+	f32 x;
+	f32 y;
+} v2;
+
+typedef struct {
+	f32 x;
+	f32 y;
+	f32 z;
+} v3;
+
+typedef struct {
+	f32 x;
+	f32 y;
+	f32 z;
+	f32 w;
+} v4;
+
+typedef struct {
+	u64 count;
+	u8* data;
+} string;
