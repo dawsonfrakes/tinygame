@@ -202,6 +202,8 @@ version (OpenGL) {
     // 1.0
     enum GL_COLOR_BUFFER_BIT = 0x00004000;
     enum GL_TRIANGLES = 0x0004;
+    enum GL_UNSIGNED_BYTE = 0x1401;
+    enum GL_FLOAT = 0x1406;
 
     extern extern(System) void glEnable(uint);
     extern extern(System) void glDisable(uint);
@@ -214,9 +216,27 @@ version (OpenGL) {
 
     // 1.1
     extern extern(System) void glDrawArrays(uint, int, uint);
+    extern extern(System) void glDrawElements(uint, uint, uint, const(void)*);
+
+    // 1.5
+    enum GL_STATIC_DRAW = 0x88E4;
 
     // 2.0
+    enum GL_FRAGMENT_SHADER = 0x8B30;
+    enum GL_VERTEX_SHADER = 0x8B31;
     enum GL_LOWER_LEFT = 0x8CA1;
+
+    struct GL20 {
+        extern extern(System) uint glCreateProgram();
+        extern extern(System) void glAttachShader(uint, uint);
+        extern extern(System) void glDetachShader(uint, uint);
+        extern extern(System) void glLinkProgram(uint);
+        extern extern(System) void glUseProgram(uint);
+        extern extern(System) uint glCreateShader(uint);
+        extern extern(System) void glDeleteShader(uint);
+        extern extern(System) void glShaderSource(uint, uint, const(char*)*, const(int)*);
+        extern extern(System) void glCompileShader(uint);
+    }
 
     // 3.0
     enum GL_FRAMEBUFFER_SRGB = 0x8DB9;
@@ -232,8 +252,14 @@ version (OpenGL) {
     struct GL45 {
         extern extern(System) void glClipControl(uint, uint);
         extern extern(System) void glCreateVertexArrays(uint, uint*);
+        extern extern(System) void glVertexArrayElementBuffer(uint, uint);
         extern extern(System) void glVertexArrayVertexBuffer(uint, uint, uint, int, uint);
+        extern extern(System) void glEnableVertexArrayAttrib(uint, uint);
+        extern extern(System) void glVertexArrayAttribBinding(uint, uint, uint);
+        extern extern(System) void glVertexArrayAttribFormat(uint, uint, int, uint, bool, uint);
         extern extern(System) void glCreateBuffers(uint, uint*);
+        extern extern(System) void glNamedBufferData(uint, size_t, const(void)*, uint);
+        extern extern(System) void glProgramUniformMatrix4fv(uint, int, uint, bool, const(float)*);
     }
 
     // WGL_ARB_create_context
@@ -249,6 +275,7 @@ version (OpenGL) {
 
 version (Windows) {
     version (OpenGL) {
+        mixin(FnsToFnPtrs!GL20);
         mixin(FnsToFnPtrs!GL30);
         mixin(FnsToFnPtrs!GL45);
     }
@@ -346,7 +373,7 @@ version (Windows) {
                     HGLRC ctx = wglCreateContextAttribsARB(platform_hdc, null, attribs.ptr);
                     wglMakeCurrent(platform_hdc, ctx);
 
-                    static foreach (T; AliasSeq!(GL30, GL45)) {
+                    static foreach (T; AliasSeq!(GL20, GL30, GL45)) {
                         static foreach (name; __traits(allMembers, T)) {
                             mixin(name ~ " = " ~ "cast(typeof(" ~ name ~ ")) wglGetProcAddress(\"" ~ name ~ "\");\n");
                         }
@@ -375,6 +402,7 @@ version (Windows) {
 
         bool initted = false;
         uint vao = void;
+        uint program = void;
         game_loop: while (true) {
             MSG msg = void;
             while (PeekMessageW(&msg, null, 0, 0, PM_REMOVE)) {
@@ -407,6 +435,18 @@ version (Windows) {
                 }
             }
 
+            struct Vertex {
+                float[3] position;
+                float[4] color;
+            }
+
+            __gshared Vertex[3] vertices = [
+                {[-0.5f, -0.5f, 0.0f], [1.0f, 0.0f, 0.0f, 1.0f]},
+                {[ 0.5f, -0.5f, 0.0f], [0.0f, 1.0f, 0.0f, 1.0f]},
+                {[ 0.0f,  0.5f, 0.0f], [0.0f, 0.0f, 1.0f, 1.0f]},
+            ];
+            __gshared ubyte[3] indices = [0, 1, 2];
+
             if (!initted) {
                 initted = true;
 
@@ -414,9 +454,63 @@ version (Windows) {
 
                 uint vbo = void;
                 glCreateBuffers(1, &vbo);
+                glNamedBufferData(vbo, vertices.length * Vertex.sizeof, vertices.ptr, GL_STATIC_DRAW);
+
+                uint ebo = void;
+                glCreateBuffers(1, &ebo);
+                glNamedBufferData(ebo, indices.length * typeof(indices[0]).sizeof, indices.ptr, GL_STATIC_DRAW);
 
                 glCreateVertexArrays(1, &vao);
-                glVertexArrayVertexBuffer(vao, 0, vbo, 0, 0);
+                glVertexArrayElementBuffer(vao, ebo);
+                uint vbo_binding = 0;
+                glVertexArrayVertexBuffer(vao, vbo_binding, vbo, 0, Vertex.sizeof);
+
+                uint position_attrib = 0;
+                glEnableVertexArrayAttrib(vao, position_attrib);
+                glVertexArrayAttribBinding(vao, position_attrib, vbo_binding);
+                glVertexArrayAttribFormat(vao, position_attrib, 3, GL_FLOAT, false, Vertex.position.offsetof);
+
+                uint color_attrib = 1;
+                glEnableVertexArrayAttrib(vao, color_attrib);
+                glVertexArrayAttribBinding(vao, color_attrib, vbo_binding);
+                glVertexArrayAttribFormat(vao, color_attrib, 4, GL_FLOAT, false, Vertex.color.offsetof);
+
+                string vsrc =
+                    "#version 450
+                    layout(location = 0) in vec3 a_position;
+                    layout(location = 1) in vec4 a_color;
+                    layout(location = 0) uniform mat4 u_projection;
+
+                    out vec4 f_color;
+                    void main() {
+                        gl_Position = u_projection * vec4(a_position, 1.0f);
+                        f_color = a_color;
+                    }";
+                uint vshader = glCreateShader(GL_VERTEX_SHADER);
+                const(char*)[1] vsrc_arr = [vsrc.ptr];
+                glShaderSource(vshader, 1, vsrc_arr.ptr, null);
+                glCompileShader(vshader);
+
+                string fsrc =
+                    "#version 450
+                    in vec4 f_color;
+                    out vec4 color;
+                    void main() {
+                        color = f_color;
+                    }";
+                uint fshader = glCreateShader(GL_FRAGMENT_SHADER);
+                const(char*)[1] fsrc_arr = [fsrc.ptr];
+                glShaderSource(fshader, 1, fsrc_arr.ptr, null);
+                glCompileShader(fshader);
+
+                program = glCreateProgram();
+                glAttachShader(program, vshader);
+                glAttachShader(program, fshader);
+                glLinkProgram(program);
+                glDetachShader(program, vshader);
+                glDetachShader(program, fshader);
+                glDeleteShader(vshader);
+                glDeleteShader(fshader);
             }
 
             glViewport(0, 0, platform_screen_width, platform_screen_height);
@@ -424,7 +518,19 @@ version (Windows) {
             glClearColor(0.6f, 0.2f, 0.2f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT);
             glBindVertexArray(vao);
-            glDrawArrays(GL_TRIANGLES, 0, 0);
+
+            float[16] projection = 0.0f;
+            projection[0 * 4 + 0] = 1.0f;
+            projection[1 * 4 + 1] = 1.0f;
+            projection[2 * 4 + 2] = 1.0f;
+            projection[3 * 4 + 0] = 0.5f;
+            projection[3 * 4 + 1] = 0.5f;
+            projection[3 * 4 + 3] = 1.0f;
+            uint projection_uniform = 0;
+            glProgramUniformMatrix4fv(program, projection_uniform, 1, false, projection.ptr);
+
+            glUseProgram(program);
+            glDrawElements(GL_TRIANGLES, indices.length, GL_UNSIGNED_BYTE, cast(void*) 0);
             SwapBuffers(platform_hdc);
 
             if (sleep_is_granular) {
