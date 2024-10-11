@@ -1,6 +1,16 @@
 enum DEVELOPER = true;
+version = OpenGL;
 
 version (D_BetterC) {} else pragma(msg, "warning: -betterC recommended");
+
+enum FnsToFnPtrs(T) = {
+    string result = "";
+    static foreach (name; __traits(allMembers, T)) {{
+        alias Fn = typeof(__traits(getMember, T, name));
+        result ~= "__gshared " ~ (Fn*).stringof ~ " " ~ name ~ ";\n";
+    }}
+    return result;
+}();
 
 version (Windows) {
     // kernel32
@@ -100,6 +110,53 @@ version (Windows) {
     extern extern(Windows) ptrdiff_t DefWindowProcW(HWND, uint, size_t, ptrdiff_t);
     extern extern(Windows) void PostQuitMessage(int);
 
+    // gdi32
+    enum PFD_DOUBLEBUFFER = 0x00000001;
+    enum PFD_DRAW_TO_WINDOW = 0x00000004;
+    enum PFD_SUPPORT_OPENGL = 0x00000020;
+    enum PFD_DEPTH_DONTCARE = 0x20000000;
+
+    struct PIXELFORMATDESCRIPTOR {
+        ushort nSize;
+        ushort nVersion;
+        uint dwFlags;
+        ubyte iPixelType;
+        ubyte cColorBits;
+        ubyte cRedBits;
+        ubyte cRedShift;
+        ubyte cGreenBits;
+        ubyte cGreenShift;
+        ubyte cBlueBits;
+        ubyte cBlueShift;
+        ubyte cAlphaBits;
+        ubyte cAlphaShift;
+        ubyte cAccumBits;
+        ubyte cAccumRedBits;
+        ubyte cAccumGreenBits;
+        ubyte cAccumBlueBits;
+        ubyte cAccumAlphaBits;
+        ubyte cDepthBits;
+        ubyte cStencilBits;
+        ubyte cAuxBuffers;
+        ubyte iLayerType;
+        ubyte bReserved;
+        uint dwLayerMask;
+        uint dwVisibleMask;
+        uint dwDamageMask;
+    }
+
+    extern extern(Windows) int ChoosePixelFormat(HDC, const(PIXELFORMATDESCRIPTOR)*);
+    extern extern(Windows) int SetPixelFormat(HDC, int, const(PIXELFORMATDESCRIPTOR)*);
+    extern extern(Windows) int SwapBuffers(HDC);
+
+    // opengl32
+    struct HGLRC__; alias HGLRC = HGLRC__*;
+
+    extern extern(Windows) HGLRC wglCreateContext(HDC);
+    extern extern(Windows) int wglDeleteContext(HGLRC);
+    extern extern(Windows) int wglMakeCurrent(HDC, HGLRC);
+    extern extern(Windows) PROC wglGetProcAddress(const(char)*);
+
     // dwmapi
     enum DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
     enum DWMWA_WINDOW_CORNER_PREFERENCE = 33;
@@ -111,7 +168,48 @@ version (Windows) {
     extern extern(Windows) uint timeBeginPeriod(uint);
 }
 
+version (OpenGL) {
+    // 1.0
+    enum GL_COLOR_BUFFER_BIT = 0x00004000;
+
+    extern extern(System) void glEnable(uint);
+    extern extern(System) void glDisable(uint);
+    extern extern(System) void glGetIntegerv(uint, int*);
+    extern extern(System) void glDepthFunc(uint);
+    extern extern(System) void glBlendFunc(uint, uint);
+    extern extern(System) void glViewport(int, int, uint, uint);
+    extern extern(System) void glClearColor(float, float, float, float);
+    extern extern(System) void glClear(uint);
+
+    // 2.0
+    enum GL_LOWER_LEFT = 0x8CA1;
+
+    // 3.0
+    enum GL_FRAMEBUFFER_SRGB = 0x8DB9;
+
+    // 4.5
+    enum GL_ZERO_TO_ONE = 0x935F;
+
+    struct GL45 {
+        extern extern(System) void glClipControl(uint, uint);
+    }
+
+    // WGL_ARB_create_context
+    alias PFN_wglCreateContextAttribsARB = extern(Windows) HGLRC function(HDC, HGLRC, const(int)*);
+
+    enum WGL_CONTEXT_MAJOR_VERSION_ARB = 0x2091;
+    enum WGL_CONTEXT_MINOR_VERSION_ARB = 0x2092;
+    enum WGL_CONTEXT_FLAGS_ARB = 0x2094;
+    enum WGL_CONTEXT_PROFILE_MASK_ARB = 0x9126;
+    enum WGL_CONTEXT_DEBUG_BIT_ARB = 0x0001;
+    enum WGL_CONTEXT_CORE_PROFILE_BIT_ARB = 0x00000001;
+}
+
 version (Windows) {
+    version (OpenGL) {
+        mixin(FnsToFnPtrs!GL45);
+    }
+
     __gshared HINSTANCE platform_hinstance = void;
     __gshared HWND platform_hwnd = void;
     __gshared HDC platform_hdc = void;
@@ -154,6 +252,37 @@ version (Windows) {
                     DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark_mode, dark_mode.sizeof);
                     int round_mode = DWMWCP_DONOTROUND;
                     DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &round_mode, round_mode.sizeof);
+
+                    PIXELFORMATDESCRIPTOR pfd;
+                    pfd.nSize = PIXELFORMATDESCRIPTOR.sizeof;
+                    pfd.nVersion = 1;
+                    pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL |
+                        PFD_DOUBLEBUFFER | PFD_DEPTH_DONTCARE;
+                    pfd.cColorBits = 24;
+                    int format = ChoosePixelFormat(platform_hdc, &pfd);
+                    SetPixelFormat(platform_hdc, format, &pfd);
+
+                    HGLRC temp_ctx = wglCreateContext(platform_hdc);
+                    scope(exit) wglDeleteContext(temp_ctx);
+                    wglMakeCurrent(platform_hdc, temp_ctx);
+
+                    PFN_wglCreateContextAttribsARB wglCreateContextAttribsARB =
+                        cast(PFN_wglCreateContextAttribsARB)
+                        wglGetProcAddress("wglCreateContextAttribsARB");
+
+                    int[9] attribs = [
+                        WGL_CONTEXT_MAJOR_VERSION_ARB, 4,
+                        WGL_CONTEXT_MINOR_VERSION_ARB, 6,
+                        WGL_CONTEXT_FLAGS_ARB, DEVELOPER ? WGL_CONTEXT_DEBUG_BIT_ARB : 0,
+                        WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+                        0,
+                    ];
+                    HGLRC ctx = wglCreateContextAttribsARB(platform_hdc, null, attribs.ptr);
+                    wglMakeCurrent(platform_hdc, ctx);
+
+                    static foreach (name; __traits(allMembers, GL45)) {
+                        mixin(name ~ " = " ~ "cast(typeof(" ~ name ~ ")) wglGetProcAddress(\"" ~ name ~ "\");\n");
+                    }
                     return 0;
                 }
                 case WM_DESTROY: {
@@ -208,10 +337,18 @@ version (Windows) {
                 }
             }
 
+            glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
+            glViewport(0, 0, platform_screen_width, platform_screen_height);
+            glEnable(GL_FRAMEBUFFER_SRGB);
+            glClearColor(0.6f, 0.2f, 0.2f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+            SwapBuffers(platform_hdc);
+
             if (sleep_is_granular) {
                 Sleep(1);
             }
         }
+
 
         ExitProcess(0);
     }
@@ -219,6 +356,9 @@ version (Windows) {
     pragma(linkerDirective, "-subsystem:windows");
     pragma(lib, "kernel32");
     pragma(lib, "user32");
+    pragma(lib, "gdi32");
+    pragma(lib, "opengl32");
     pragma(lib, "dwmapi");
     pragma(lib, "winmm");
+    extern(C) int _fltused;
 }
