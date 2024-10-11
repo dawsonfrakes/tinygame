@@ -3,8 +3,9 @@ version = OpenGL;
 
 version (D_BetterC) {} else pragma(msg, "warning: -betterC recommended");
 
+alias AliasSeq(TList...) = TList;
 enum FnsToFnPtrs(T) = {
-    string result = "";
+    string result;
     static foreach (name; __traits(allMembers, T)) {{
         alias Fn = typeof(__traits(getMember, T, name));
         result ~= "__gshared " ~ (Fn*).stringof ~ " " ~ name ~ ";\n";
@@ -48,6 +49,13 @@ version (Windows) {
     enum WM_SYSKEYUP = 0x0105;
     enum WM_SYSCOMMAND = 0x0112;
     enum SC_KEYMENU = 0xF100;
+    enum GWL_STYLE = -16;
+    enum HWND_TOP = cast(HWND) 0;
+    enum SWP_NOSIZE = 0x0001;
+    enum SWP_NOMOVE = 0x0002;
+    enum SWP_NOZORDER = 0x0004;
+    enum SWP_FRAMECHANGED = 0x0020;
+    enum MONITOR_DEFAULTTOPRIMARY = 0x00000001;
     enum VK_RETURN = 0x0D;
     enum VK_ESCAPE = 0x1B;
     enum VK_F4 = 0x73;
@@ -95,6 +103,21 @@ version (Windows) {
         POINT pt;
         uint lPrivate;
     }
+    struct WINDOWPLACEMENT {
+        uint length;
+        uint flags;
+        uint showCmd;
+        POINT ptMinPosition;
+        POINT ptMaxPosition;
+        RECT rcNormalPosition;
+        RECT rcDevice;
+    }
+    struct MONITORINFO {
+        uint cbSize;
+        RECT rcMonitor;
+        RECT rcWork;
+        uint dwFlags;
+    }
 
     extern extern(Windows) int SetProcessDPIAware();
     extern extern(Windows) HICON LoadIconW(HINSTANCE, const(wchar)*);
@@ -109,6 +132,13 @@ version (Windows) {
     extern extern(Windows) int DestroyWindow(HWND);
     extern extern(Windows) ptrdiff_t DefWindowProcW(HWND, uint, size_t, ptrdiff_t);
     extern extern(Windows) void PostQuitMessage(int);
+    extern extern(Windows) long GetWindowLongPtrW(HWND, int);
+    extern extern(Windows) long SetWindowLongPtrW(HWND, int, long);
+    extern extern(Windows) int GetWindowPlacement(HWND, WINDOWPLACEMENT*);
+    extern extern(Windows) int SetWindowPlacement(HWND, const(WINDOWPLACEMENT)*);
+    extern extern(Windows) int SetWindowPos(HWND, HWND, int, int, int, int, uint);
+    extern extern(Windows) HMONITOR MonitorFromWindow(HWND, uint);
+    extern extern(Windows) int GetMonitorInfoW(HMONITOR, MONITORINFO*);
 
     // gdi32
     enum PFD_DOUBLEBUFFER = 0x00000001;
@@ -171,6 +201,7 @@ version (Windows) {
 version (OpenGL) {
     // 1.0
     enum GL_COLOR_BUFFER_BIT = 0x00004000;
+    enum GL_TRIANGLES = 0x0004;
 
     extern extern(System) void glEnable(uint);
     extern extern(System) void glDisable(uint);
@@ -181,17 +212,28 @@ version (OpenGL) {
     extern extern(System) void glClearColor(float, float, float, float);
     extern extern(System) void glClear(uint);
 
+    // 1.1
+    extern extern(System) void glDrawArrays(uint, int, uint);
+
     // 2.0
     enum GL_LOWER_LEFT = 0x8CA1;
 
     // 3.0
     enum GL_FRAMEBUFFER_SRGB = 0x8DB9;
 
+    struct GL30 {
+        extern extern(System) void glBindFramebuffer(uint, uint);
+        extern extern(System) void glBindVertexArray(uint);
+    }
+
     // 4.5
     enum GL_ZERO_TO_ONE = 0x935F;
 
     struct GL45 {
         extern extern(System) void glClipControl(uint, uint);
+        extern extern(System) void glCreateVertexArrays(uint, uint*);
+        extern extern(System) void glVertexArrayVertexBuffer(uint, uint, uint, int, uint);
+        extern extern(System) void glCreateBuffers(uint, uint*);
     }
 
     // WGL_ARB_create_context
@@ -207,6 +249,7 @@ version (OpenGL) {
 
 version (Windows) {
     version (OpenGL) {
+        mixin(FnsToFnPtrs!GL30);
         mixin(FnsToFnPtrs!GL45);
     }
 
@@ -217,6 +260,29 @@ version (Windows) {
     __gshared ushort platform_screen_height = void;
 
     extern(Windows) noreturn WinMainCRTStartup() {
+        void toggle_fullscreen() {
+            __gshared WINDOWPLACEMENT save_placement = {WINDOWPLACEMENT.sizeof};
+
+            uint style = cast(uint) GetWindowLongPtrW(platform_hwnd, GWL_STYLE);
+            if (style & WS_OVERLAPPEDWINDOW) {
+                MONITORINFO mi = {MONITORINFO.sizeof};
+                GetMonitorInfoW(MonitorFromWindow(platform_hwnd, MONITOR_DEFAULTTOPRIMARY), &mi);
+
+                GetWindowPlacement(platform_hwnd, &save_placement);
+                SetWindowLongPtrW(platform_hwnd, GWL_STYLE, style & ~cast(uint) WS_OVERLAPPEDWINDOW);
+                SetWindowPos(platform_hwnd, HWND_TOP,
+                    mi.rcMonitor.left, mi.rcMonitor.top,
+                    mi.rcMonitor.right - mi.rcMonitor.left,
+                    mi.rcMonitor.bottom - mi.rcMonitor.top,
+                    SWP_FRAMECHANGED);
+            } else {
+                SetWindowLongPtrW(platform_hwnd, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
+                SetWindowPlacement(platform_hwnd, &save_placement);
+                SetWindowPos(platform_hwnd, null, 0, 0, 0, 0, SWP_NOSIZE |
+                    SWP_NOMOVE | SWP_NOZORDER | SWP_FRAMECHANGED);
+            }
+        }
+
         platform_hinstance = GetModuleHandleW(null);
 
         bool sleep_is_granular = timeBeginPeriod(1) == 0;
@@ -280,8 +346,10 @@ version (Windows) {
                     HGLRC ctx = wglCreateContextAttribsARB(platform_hdc, null, attribs.ptr);
                     wglMakeCurrent(platform_hdc, ctx);
 
-                    static foreach (name; __traits(allMembers, GL45)) {
-                        mixin(name ~ " = " ~ "cast(typeof(" ~ name ~ ")) wglGetProcAddress(\"" ~ name ~ "\");\n");
+                    static foreach (T; AliasSeq!(GL30, GL45)) {
+                        static foreach (name; __traits(allMembers, T)) {
+                            mixin(name ~ " = " ~ "cast(typeof(" ~ name ~ ")) wglGetProcAddress(\"" ~ name ~ "\");\n");
+                        }
                     }
                     return 0;
                 }
@@ -305,6 +373,8 @@ version (Windows) {
             CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
             null, null, platform_hinstance, null);
 
+        bool initted = false;
+        uint vao = void;
         game_loop: while (true) {
             MSG msg = void;
             while (PeekMessageW(&msg, null, 0, 0, PM_REMOVE)) {
@@ -322,7 +392,7 @@ version (Windows) {
                         if (!repeat && (!sys || alt || wParam == VK_F10)) {
                             if (pressed) {
                                 if (wParam == VK_F4 && alt) DestroyWindow(platform_hwnd);
-                                // if (wParam == VK_F11 || (wParam == VK_RETURN && alt)) toggle_fullscreen();
+                                if (wParam == VK_F11 || (wParam == VK_RETURN && alt)) toggle_fullscreen();
                                 if (DEVELOPER && wParam == VK_ESCAPE) DestroyWindow(platform_hwnd);
                             }
                         }
@@ -337,18 +407,30 @@ version (Windows) {
                 }
             }
 
-            glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
+            if (!initted) {
+                initted = true;
+
+                glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
+
+                uint vbo = void;
+                glCreateBuffers(1, &vbo);
+
+                glCreateVertexArrays(1, &vao);
+                glVertexArrayVertexBuffer(vao, 0, vbo, 0, 0);
+            }
+
             glViewport(0, 0, platform_screen_width, platform_screen_height);
             glEnable(GL_FRAMEBUFFER_SRGB);
             glClearColor(0.6f, 0.2f, 0.2f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT);
+            glBindVertexArray(vao);
+            glDrawArrays(GL_TRIANGLES, 0, 0);
             SwapBuffers(platform_hdc);
 
             if (sleep_is_granular) {
                 Sleep(1);
             }
         }
-
 
         ExitProcess(0);
     }
