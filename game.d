@@ -1,5 +1,6 @@
 enum DEVELOPER = true;
 version = OpenGL;
+version = Gameplay;
 
 version (D_BetterC) {} else pragma(msg, "warning: -betterC recommended");
 
@@ -513,24 +514,46 @@ version (Windows) {
                 glDeleteShader(fshader);
             }
 
+            version (Gameplay) {
+                enum ModelKind {
+                    triangle,
+                }
+
+                void draw_model(ModelKind kind, float[3] position) {
+                    switch (kind) {
+                        case ModelKind.triangle:
+                            float[16] projection = 0.0f;
+                            projection[0 * 4 + 0] = 1.0f;
+                            projection[1 * 4 + 1] = 1.0f;
+                            projection[2 * 4 + 2] = 1.0f;
+                            projection[3 * 4 + 0] = position[0];
+                            projection[3 * 4 + 1] = position[1];
+                            projection[3 * 4 + 2] = position[2];
+                            projection[3 * 4 + 3] = 1.0f;
+                            uint projection_uniform = 0;
+                            glProgramUniformMatrix4fv(program, projection_uniform, 1, false, projection.ptr);
+
+                            glBindVertexArray(vao);
+                            glUseProgram(program);
+                            glDrawElements(GL_TRIANGLES, indices.length, GL_UNSIGNED_BYTE, cast(void*) 0);
+                            break;
+                        default: break;
+                    }
+                }
+
+                void game_update() {
+                    draw_model(ModelKind.triangle, [-0.5f, 0.0f, 0.0f]);
+                    draw_model(ModelKind.triangle, [0.5f, 0.0f, 0.0f]);
+                }
+            }
+
             glViewport(0, 0, platform_screen_width, platform_screen_height);
             glEnable(GL_FRAMEBUFFER_SRGB);
             glClearColor(0.6f, 0.2f, 0.2f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT);
-            glBindVertexArray(vao);
 
-            float[16] projection = 0.0f;
-            projection[0 * 4 + 0] = 1.0f;
-            projection[1 * 4 + 1] = 1.0f;
-            projection[2 * 4 + 2] = 1.0f;
-            projection[3 * 4 + 0] = 0.5f;
-            projection[3 * 4 + 1] = 0.5f;
-            projection[3 * 4 + 3] = 1.0f;
-            uint projection_uniform = 0;
-            glProgramUniformMatrix4fv(program, projection_uniform, 1, false, projection.ptr);
+            game_update();
 
-            glUseProgram(program);
-            glDrawElements(GL_TRIANGLES, indices.length, GL_UNSIGNED_BYTE, cast(void*) 0);
             SwapBuffers(platform_hdc);
 
             if (sleep_is_granular) {
