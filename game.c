@@ -12,7 +12,7 @@
 
 #define cast(T) (T)
 #define size_of(T) sizeof(T)
-#define offset_of(T, F) (cast(u64) &(cast(T*)->F))
+#define offset_of(T, F) (cast(u64) &(cast(T*) 0)->F)
 #define align_of(T) offset_of(struct { u8 x; T t; }, t)
 
 #define min(X, Y) ((X) < (Y) ? (X) : (Y))
@@ -40,6 +40,29 @@ typedef u8 bool;
 
 typedef float f32;
 typedef double f64;
+
+typedef struct {
+	u64 count;
+	u8* data;
+} string;
+
+typedef struct {
+	f32 x;
+	f32 y;
+} v2;
+
+typedef struct {
+	f32 x;
+	f32 y;
+	f32 z;
+} v3;
+
+typedef struct {
+	f32 x;
+	f32 y;
+	f32 z;
+	f32 w;
+} v4;
 
 #if TARGET_OS_WINDOWS
 // kernel32
@@ -206,6 +229,26 @@ typedef struct HGLRC__* HGLRC;
 	X(u32, timeBeginPeriod, u32)
 #endif
 
+// steam
+#define k_EFriendFlagAll 0xFFFF
+
+typedef char SteamErrMsg[1024];
+typedef struct ISteamFriends__* ISteamFriends;
+typedef struct ISteamUtils__* ISteamUtils;
+
+#define STEAM_FUNCTIONS \
+	X(s32, SteamAPI_InitFlat, SteamErrMsg*) \
+	X(void, SteamAPI_RunCallbacks, void) \
+	X(ISteamFriends, SteamAPI_SteamFriends_v017, void) \
+	X(u64, SteamAPI_ISteamFriends_GetFriendByIndex, ISteamFriends, s32, s32) \
+	X(s32, SteamAPI_ISteamFriends_GetFriendCount, ISteamFriends, s32) \
+	X(s32, SteamAPI_ISteamFriends_GetMediumFriendAvatar, ISteamFriends, u64) \
+	X(u8*, SteamAPI_ISteamFriends_GetPersonaName, ISteamFriends) \
+	X(u8*, SteamAPI_ISteamFriends_GetFriendPersonaName, ISteamFriends, u64) \
+	X(ISteamUtils, SteamAPI_SteamUtils_v010, void) \
+	X(bool, SteamAPI_ISteamUtils_GetImageRGBA, ISteamUtils, s32, u8*, s32) \
+	X(void, SteamAPI_Shutdown, void)
+
 #if TARGET_OS_WINDOWS
 #define X(RET, NAME, ...) RET NAME(__VA_ARGS__);
 KERNEL32_FUNCTIONS
@@ -216,6 +259,8 @@ GDI32_FUNCTIONS
 OPENGL32_FUNCTIONS
 DWMAPI_FUNCTIONS
 WINMM_FUNCTIONS
+
+STEAM_FUNCTIONS
 #undef X
 
 static u16 platform_screen_width;
@@ -223,22 +268,102 @@ static u16 platform_screen_height;
 static HINSTANCE platform_hinstance;
 static HWND platform_hwnd;
 static HDC platform_hdc;
+static bool platform_steam_enabled;
+
+static ISteamFriends steam_friends;
+static ISteamUtils steam_utils;
+static u8* steam_player_name;
 
 // 1.0
 #define GL_COLOR_BUFFER_BIT 0x00004000
+#define GL_TRIANGLES 0x0004
+#define GL_UNSIGNED_BYTE 0x1401
+#define GL_FLOAT 0x1406
+#define GL_TEXTURE_2D 0x0DE1
+#define GL_RGB 0x1907
+#define GL_RGBA 0x1908
+#define GL_LINEAR 0x2601
+#define GL_TEXTURE_MIN_FILTER 0x2801
 
 #define GL10_FUNCTIONS \
 	X(void, glEnable, u32) \
 	X(void, glDisable, u32) \
+	X(void, glGetIntegerv, u32, s32*) \
+	X(void, glDepthFunc, u32) \
+	X(void, glBlendFunc, u32, u32) \
+	X(void, glViewport, s32, s32, u32, u32) \
 	X(void, glClearColor, f32, f32, f32, f32) \
 	X(void, glClear, u32)
+
+// 1.1
+#define GL_RGB8 0x8051
+
+#define GL11_FUNCTIONS \
+	X(void, glDrawElements, u32, u32, u32, void*)
+
+// 1.5
+#define GL_STATIC_DRAW 0x88E4
+
+// 2.0
+#define GL_FRAGMENT_SHADER 0x8B30
+#define GL_VERTEX_SHADER 0x8B31
+#define GL_LOWER_LEFT 0x8CA1
+
+#define GL20_FUNCTIONS \
+	X(u32, glCreateProgram, void) \
+	X(void, glAttachShader, u32, u32) \
+	X(void, glDetachShader, u32, u32) \
+	X(void, glLinkProgram, u32) \
+	X(void, glUseProgram, u32) \
+	X(u32, glCreateShader, u32) \
+	X(void, glDeleteShader, u32) \
+	X(void, glShaderSource, u32, u32, u8**, s32*) \
+	X(void, glCompileShader, u32)
 
 // 3.0
 #define GL_FRAMEBUFFER_SRGB 0x8DB9
 
+// 3.0
+#define GL30_FUNCTIONS \
+	X(void, glBindFramebuffer, u32, u32) \
+	X(void, glBindVertexArray, u32)
+
+// 4.5
+#define GL_ZERO_TO_ONE 0x935F
+
+#define GL45_FUNCTIONS \
+	X(void, glClipControl, u32, u32) \
+	X(void, glCreateVertexArrays, u32, u32*) \
+	X(void, glVertexArrayElementBuffer, u32, u32) \
+	X(void, glVertexArrayVertexBuffer, u32, u32, u32, s64, u32) \
+	X(void, glEnableVertexArrayAttrib, u32, u32) \
+	X(void, glVertexArrayAttribBinding, u32, u32, u32) \
+	X(void, glVertexArrayAttribFormat, u32, u32, s32, u32, bool, u32) \
+	X(void, glCreateBuffers, u32, u32*) \
+	X(void, glNamedBufferData, u32, u64, void*, u32) \
+	X(void, glCreateTextures, u32, u32, u32*) \
+	X(void, glTextureStorage2D, u32, u32, u32, u32, u32) \
+	X(void, glTextureSubImage2D, u32, s32, s32, s32, u32, u32, u32, u32, void*) \
+	X(void, glTextureParameteri, u32, u32, s32) \
+	X(void, glBindTextureUnit, u32, u32)
+
+// WGL_ARB_create_context
+#define WGL_CONTEXT_MAJOR_VERSION_ARB 0x2091
+#define WGL_CONTEXT_MINOR_VERSION_ARB 0x2092
+#define WGL_CONTEXT_FLAGS_ARB 0x2094
+#define WGL_CONTEXT_PROFILE_MASK_ARB 0x9126
+#define WGL_CONTEXT_DEBUG_BIT_ARB 0x0001
+#define WGL_CONTEXT_CORE_PROFILE_BIT_ARB 0x00000001
+
 #define X(RET, NAME, ...) static RET (*NAME)(__VA_ARGS__);
 GL10_FUNCTIONS
+GL11_FUNCTIONS
+GL20_FUNCTIONS
+GL30_FUNCTIONS
+GL45_FUNCTIONS
 #undef X
+
+static HGLRC opengl_ctx;
 
 static void opengl_platform_init(void) {
 	static PIXELFORMATDESCRIPTOR pfd = {0};
@@ -252,18 +377,138 @@ static void opengl_platform_init(void) {
 
 	HGLRC temp_ctx = wglCreateContext(platform_hdc);
 	wglMakeCurrent(platform_hdc, temp_ctx);
+
+	HGLRC (*wglCreateContextAttribsARB)(HDC, HGLRC, s32*) =
+		cast(HGLRC (*)(HDC, HGLRC, s32*))
+		wglGetProcAddress("wglCreateContextAttribsARB");
+
+	static s32 attribs[] = {
+		WGL_CONTEXT_MAJOR_VERSION_ARB, 4,
+		WGL_CONTEXT_MINOR_VERSION_ARB, 6,
+		WGL_CONTEXT_FLAGS_ARB, WGL_CONTEXT_DEBUG_BIT_ARB,
+		WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+		0,
+	};
+	opengl_ctx = wglCreateContextAttribsARB(platform_hdc, null, attribs);
+	wglMakeCurrent(platform_hdc, opengl_ctx);
+
+	wglDeleteContext(temp_ctx);
+
+#define X(RET, NAME, ...) NAME = cast(RET (*)(__VA_ARGS__)) wglGetProcAddress(#NAME);
+	GL20_FUNCTIONS
+	GL30_FUNCTIONS
+	GL45_FUNCTIONS
+#undef X
 }
 
 static void opengl_platform_deinit(void) {
-
+	if (opengl_ctx) wglDeleteContext(opengl_ctx);
+	opengl_ctx = null;
 }
 
 static void opengl_platform_present(void) {
 	SwapBuffers(platform_hdc);
 }
 
+typedef struct {
+	v3 position;
+	v2 texcoord;
+} OpenGLRectVertex;
+
+static OpenGLRectVertex rect_vertices[] = {
+	{.position = {-0.5f, -0.5f, 0.0f}, .texcoord = {0.0f, 0.0f}},
+	{.position = {+0.5f, -0.5f, 0.0f}, .texcoord = {1.0f, 0.0f}},
+	{.position = {+0.5f, +0.5f, 0.0f}, .texcoord = {1.0f, 1.0f}},
+	{.position = {-0.5f, +0.5f, 0.0f}, .texcoord = {0.0f, 1.0f}},
+};
+static u8 rect_indices[] = {0, 1, 2, 2, 3, 0};
+static u32 opengl_rect_vao;
+static u32 opengl_rect_shader;
+static u32 opengl_rect_texture;
+static u8 opengl_steam_profile_store[64*64*4];
+
 static void opengl_init(void) {
 	opengl_platform_init();
+
+	glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
+
+	{
+	u32 vbo;
+	glCreateBuffers(1, &vbo);
+	glNamedBufferData(vbo, size_of(rect_vertices), rect_vertices, GL_STATIC_DRAW);
+
+	u32 ebo;
+	glCreateBuffers(1, &ebo);
+	glNamedBufferData(ebo, size_of(rect_indices), rect_indices, GL_STATIC_DRAW);
+
+	u32 vao;
+	glCreateVertexArrays(1, &vao);
+	glVertexArrayElementBuffer(vao, ebo);
+	u32 vbo_binding = 0;
+	glVertexArrayVertexBuffer(vao, vbo_binding, vbo, 0, size_of(OpenGLRectVertex));
+
+	u32 position_attrib = 0;
+	glEnableVertexArrayAttrib(vao, position_attrib);
+	glVertexArrayAttribBinding(vao, position_attrib, vbo_binding);
+	glVertexArrayAttribFormat(vao, position_attrib, 3, GL_FLOAT, false, offset_of(OpenGLRectVertex, position));
+
+	u32 texcoord_attrib = 1;
+	glEnableVertexArrayAttrib(vao, texcoord_attrib);
+	glVertexArrayAttribBinding(vao, texcoord_attrib, vbo_binding);
+	glVertexArrayAttribFormat(vao, texcoord_attrib, 2, GL_FLOAT, false, offset_of(OpenGLRectVertex, texcoord));
+
+	opengl_rect_vao = vao;
+	}
+
+	{
+	u8* vsrc =
+		"#version 450\n"
+		"layout(location = 0) in vec3 a_position;\n"
+		"layout(location = 1) in vec2 a_texcoord;\n"
+		"layout(location = 1) out vec2 f_texcoord;\n"
+		"void main() {\n"
+		"	gl_Position = vec4(a_position, 1.0);\n"
+		"	f_texcoord = a_texcoord;\n"
+		"}\n";
+	u32 vshader = glCreateShader(GL_VERTEX_SHADER);
+	glShaderSource(vshader, 1, &vsrc, null);
+	glCompileShader(vshader);
+
+	u8* fsrc =
+		"#version 450\n"
+		"layout(location = 1) in vec2 f_texcoord;\n"
+		"layout(location = 0) out vec4 color;\n"
+		"layout(location = 0) uniform sampler2D u_texture;\n"
+		"void main() {\n"
+		"	color = texture(u_texture, vec2(f_texcoord.x, 1.0 - f_texcoord.y));\n"
+		"}\n";
+	u32 fshader = glCreateShader(GL_FRAGMENT_SHADER);
+	glShaderSource(fshader, 1, &fsrc, null);
+	glCompileShader(fshader);
+
+	u32 program = glCreateProgram();
+	glAttachShader(program, vshader);
+	glAttachShader(program, fshader);
+	glLinkProgram(program);
+	glDetachShader(program, fshader);
+	glDetachShader(program, vshader);
+
+	glDeleteShader(fshader);
+	glDeleteShader(vshader);
+
+	opengl_rect_shader = program;
+	}
+
+	{
+	u32 texture;
+	glCreateTextures(GL_TEXTURE_2D, 1, &texture);
+	glTextureStorage2D(texture, 1, GL_RGB8, 64, 64);
+	glTextureSubImage2D(texture, 0, 0, 0, 64, 64, GL_RGBA, GL_UNSIGNED_BYTE, opengl_steam_profile_store);
+
+	glTextureParameteri(texture, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
+	opengl_rect_texture = texture;
+	}
 }
 
 static void opengl_deinit(void) {
@@ -276,8 +521,14 @@ static void opengl_resize(void) {
 
 static void opengl_present(void) {
 	glEnable(GL_FRAMEBUFFER_SRGB);
+	glViewport(0, 0, platform_screen_width, platform_screen_height);
 	glClearColor(0.6f, 0.2f, 0.2f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
+
+	glBindTextureUnit(0, opengl_rect_texture);
+	glUseProgram(opengl_rect_shader);
+	glBindVertexArray(opengl_rect_vao);
+	glDrawElements(GL_TRIANGLES, len(rect_indices), GL_UNSIGNED_BYTE, cast(void*) 0);
 
 	opengl_platform_present();
 }
@@ -353,11 +604,34 @@ void WinMainCRTStartup(void) {
 	lib = LoadLibraryW(L"OPENGL32");
 	OPENGL32_FUNCTIONS
 	GL10_FUNCTIONS
+	GL11_FUNCTIONS
 	lib = LoadLibraryW(L"DWMAPI");
 	DWMAPI_FUNCTIONS
 	lib = LoadLibraryW(L"WINMM");
 	WINMM_FUNCTIONS
+
+	lib = LoadLibraryW(L"steam_api64");
+	STEAM_FUNCTIONS
 #undef X
+
+	if (SteamAPI_InitFlat && SteamAPI_InitFlat(null) == 0) {
+		platform_steam_enabled = true;
+		steam_friends = SteamAPI_SteamFriends_v017();
+		steam_utils = SteamAPI_SteamUtils_v010();
+
+		steam_player_name = SteamAPI_ISteamFriends_GetPersonaName(steam_friends);
+
+		s32 count = SteamAPI_ISteamFriends_GetFriendCount(steam_friends, k_EFriendFlagAll);
+		for (s32 i = 0; i < count; ++i) {
+			u64 id = SteamAPI_ISteamFriends_GetFriendByIndex(steam_friends, i, k_EFriendFlagAll);
+			u8* name = SteamAPI_ISteamFriends_GetFriendPersonaName(steam_friends, id);
+			if (name[0] == 'm') {
+				s32 image = SteamAPI_ISteamFriends_GetMediumFriendAvatar(steam_friends, id);
+				SteamAPI_ISteamUtils_GetImageRGBA(steam_utils, image, opengl_steam_profile_store, size_of(opengl_steam_profile_store));
+				break;
+			}
+		}
+	}
 
 	platform_hinstance = GetModuleHandleW(null);
 
@@ -399,6 +673,7 @@ void WinMainCRTStartup(void) {
 						if (msg.wParam == VK_ESCAPE) DestroyWindow(platform_hwnd);
 					}
 				}
+				DispatchMessageW(&msg); // @note(dfra): temp fix for steam overlay
 				break;
 			}
 			case WM_QUIT: {
@@ -412,12 +687,15 @@ void WinMainCRTStartup(void) {
 
 		opengl_present();
 
+		if (platform_steam_enabled) SteamAPI_RunCallbacks();
+
 		if (sleep_is_granular) {
 			Sleep(1);
 		}
 	}
 game_loop_end:
 
+	if (platform_steam_enabled) SteamAPI_Shutdown();
 	ExitProcess(0);
 }
 
