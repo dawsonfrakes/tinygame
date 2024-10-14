@@ -2,6 +2,7 @@
 #define GL_COLOR_BUFFER_BIT 0x00004000
 #define GL_TRIANGLES 0x0004
 #define GL_UNSIGNED_BYTE 0x1401
+#define GL_UNSIGNED_INT 0x1405
 #define GL_FLOAT 0x1406
 #define GL_TEXTURE_2D 0x0DE1
 #define GL_RGB 0x1907
@@ -62,6 +63,15 @@
 #define GL31_FUNCTIONS \
 	X(void, glDrawElementsInstanced, u32, u32, u32, void*, u32)
 
+// 4.3
+#define GL_DEBUG_OUTPUT_SYNCHRONOUS 0x8242
+#define GL_DEBUG_OUTPUT 0x92E0
+
+typedef void (*GLDEBUGPROC)(u32, u32, u32, u32, u32, u8*, void*);
+
+#define GL43_FUNCTIONS \
+	X(void, glDebugMessageCallback, GLDEBUGPROC, void*)
+
 // 4.5
 #define GL_ZERO_TO_ONE 0x935F
 
@@ -74,6 +84,8 @@
 	X(void, glEnableVertexArrayAttrib, u32, u32) \
 	X(void, glVertexArrayAttribBinding, u32, u32, u32) \
 	X(void, glVertexArrayAttribFormat, u32, u32, s32, u32, bool, u32) \
+	X(void, glVertexArrayAttribIFormat, u32, u32, s32, u32, u32) \
+	X(void, glProgramUniform1i, u32, s32, s32) \
 	X(void, glCreateBuffers, u32, u32*) \
 	X(void, glNamedBufferData, u32, u64, void*, u32) \
 	X(void, glNamedBufferSubData, u32, s64, u64, void*) \

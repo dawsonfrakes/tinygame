@@ -34,6 +34,7 @@ static void opengl_platform_init(void) {
 	GL20_FUNCTIONS
 	GL30_FUNCTIONS
 	GL31_FUNCTIONS
+	GL43_FUNCTIONS
 	GL45_FUNCTIONS
 #undef X
 }
@@ -50,18 +51,20 @@ static void opengl_platform_present(void) {
 
 typedef struct {
 	v3 position;
-	v2 texcoord;
 } OpenGLRectVertex;
 
 typedef struct align(16) {
 	m4 transform;
+	u32 texture_index;
+	u32 avatar_index;
+	u64 unused;
 } OpenGLRectInstance;
 
 static OpenGLRectVertex rect_vertices[] = {
-	{.position = {-0.5f, -0.5f, 0.0f}, .texcoord = {0.0f, 0.0f}},
-	{.position = {+0.5f, -0.5f, 0.0f}, .texcoord = {1.0f, 0.0f}},
-	{.position = {+0.5f, +0.5f, 0.0f}, .texcoord = {1.0f, 1.0f}},
-	{.position = {-0.5f, +0.5f, 0.0f}, .texcoord = {0.0f, 1.0f}},
+	{.position = {-0.5f, -0.5f, 0.0f}},
+	{.position = {+0.5f, -0.5f, 0.0f}},
+	{.position = {+0.5f, +0.5f, 0.0f}},
+	{.position = {-0.5f, +0.5f, 0.0f}},
 };
 static u8 rect_indices[] = {0, 1, 2, 2, 3, 0};
 static u32 opengl_rect_vao;
@@ -69,8 +72,17 @@ static u32 opengl_rect_ibo;
 static u32 opengl_rect_shader;
 static u32 opengl_rect_texture;
 
+static void opengl_debug_callback(u32 source, u32 type, u32 id, u32 severity, u32 length, u8* message, void* userParam) {
+	int x = 5;
+	(void) (x, source, type, id, severity, length, message, userParam);
+}
+
 static void opengl_init(void) {
 	opengl_platform_init();
+
+	glDebugMessageCallback(opengl_debug_callback, null);
+	glEnable(GL_DEBUG_OUTPUT);
+	glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
 
 	glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
 
@@ -100,12 +112,17 @@ static void opengl_init(void) {
 	glVertexArrayAttribBinding(vao, position_attrib, vbo_binding);
 	glVertexArrayAttribFormat(vao, position_attrib, 3, GL_FLOAT, false, offset_of(OpenGLRectVertex, position));
 
-	u32 texcoord_attrib = 1;
-	glEnableVertexArrayAttrib(vao, texcoord_attrib);
-	glVertexArrayAttribBinding(vao, texcoord_attrib, vbo_binding);
-	glVertexArrayAttribFormat(vao, texcoord_attrib, 2, GL_FLOAT, false, offset_of(OpenGLRectVertex, texcoord));
+	u32 texture_index_attrib = 1;
+	glEnableVertexArrayAttrib(vao, texture_index_attrib);
+	glVertexArrayAttribBinding(vao, texture_index_attrib, ibo_binding);
+	glVertexArrayAttribIFormat(vao, texture_index_attrib, 1, GL_UNSIGNED_INT, offset_of(OpenGLRectInstance, texture_index));
 
-	u32 transform_attrib = 2;
+	u32 avatar_index_attrib = 2;
+	glEnableVertexArrayAttrib(vao, avatar_index_attrib);
+	glVertexArrayAttribBinding(vao, avatar_index_attrib, ibo_binding);
+	glVertexArrayAttribIFormat(vao, avatar_index_attrib, 1, GL_UNSIGNED_INT, offset_of(OpenGLRectInstance, avatar_index));
+
+	u32 transform_attrib = 3;
 	for (u8 i = 0; i < 4; i += 1) {
 		glEnableVertexArrayAttrib(vao, transform_attrib + i);
 		glVertexArrayAttribBinding(vao, transform_attrib + i, ibo_binding);
@@ -120,12 +137,16 @@ static void opengl_init(void) {
 	u8* vsrc =
 		"#version 450\n"
 		"layout(location = 0) in vec3 a_position;\n"
-		"layout(location = 1) in vec2 a_texcoord;\n"
-		"layout(location = 2) in mat4 a_transform;\n"
-		"layout(location = 1) out vec2 f_texcoord;\n"
+		"layout(location = 1) in uint a_texture_index;\n"
+		"layout(location = 2) in uint a_avatar_index;\n"
+		"layout(location = 3) in mat4 a_transform;\n"
+		"layout(location = 1) flat out uint f_texture_index;\n"
+		"layout(location = 2) out vec2 f_texcoord;\n"
+		"vec2 texcoords[4] = vec2[](vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 1.0));\n"
 		"void main() {\n"
 		"	gl_Position = a_transform * vec4(a_position, 1.0);\n"
-		"	f_texcoord = a_texcoord;\n"
+		"	f_texture_index = a_texture_index;\n"
+		"	f_texcoord = texcoords[gl_VertexID];\n"
 		"}\n";
 	u32 vshader = glCreateShader(GL_VERTEX_SHADER);
 	glShaderSource(vshader, 1, &vsrc, null);
@@ -133,11 +154,12 @@ static void opengl_init(void) {
 
 	u8* fsrc =
 		"#version 450\n"
-		"layout(location = 1) in vec2 f_texcoord;\n"
+		"layout(location = 1) flat in uint f_texture_index;\n"
+		"layout(location = 2) in vec2 f_texcoord;\n"
 		"layout(location = 0) out vec4 color;\n"
-		"layout(location = 0) uniform sampler2D u_texture;\n"
+		"layout(location = 0) uniform sampler2D u_textures[32];\n"
 		"void main() {\n"
-		"	color = texture(u_texture, vec2(f_texcoord.x, 1.0 - f_texcoord.y));\n"
+		"	color = texture(u_textures[f_texture_index], vec2(f_texcoord.x, 1.0 - f_texcoord.y));\n"
 		"}\n";
 	u32 fshader = glCreateShader(GL_FRAGMENT_SHADER);
 	glShaderSource(fshader, 1, &fsrc, null);
@@ -167,13 +189,13 @@ static void opengl_init(void) {
 	s32 i = 0;
 	for (s32 y = 0; y < 512; y += 64) {
 	for (s32 x = 0; x < 512; x += 64) {
+		if (i == count) break;
 		u64 id = SteamAPI_ISteamFriends_GetFriendByIndex(steam_friends, i, k_EFriendFlagAll);
 		// u8* name = SteamAPI_ISteamFriends_GetFriendPersonaName(steam_friends, id);
 		s32 image_id = SteamAPI_ISteamFriends_GetMediumFriendAvatar(steam_friends, id);
 		SteamAPI_ISteamUtils_GetImageRGBA(steam_utils, image_id, avatar, size_of(avatar));
 		glTextureSubImage2D(texture, 0, x, y, 64, 64, GL_RGBA, GL_UNSIGNED_BYTE, avatar);
 		i += 1;
-		if (i == count) break;
 	}
 	}
 
@@ -212,10 +234,11 @@ static void opengl_present(void) {
 	rect_instances[0].transform.e[0] = cast(f32) platform_screen_height / cast(f32) platform_screen_width;
 	glNamedBufferData(opengl_rect_ibo, size_of(rect_instances), rect_instances, GL_STREAM_DRAW);
 
+	glProgramUniform1i(opengl_rect_shader, 0, 0);
 	glBindTextureUnit(0, opengl_rect_texture);
 	glUseProgram(opengl_rect_shader);
 	glBindVertexArray(opengl_rect_vao);
-	glDrawElementsInstanced(GL_TRIANGLES, len(rect_indices), GL_UNSIGNED_BYTE, cast(void*) 0, len(rect_instances));
+	// glDrawElementsInstanced(GL_TRIANGLES, len(rect_indices), GL_UNSIGNED_BYTE, cast(void*) 0, len(rect_instances));
 
 	opengl_platform_present();
 }
