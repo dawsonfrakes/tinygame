@@ -10,6 +10,12 @@
 #define TARGET_OS_WINDOWS 0
 #endif
 
+#if defined(__GNUC__) || defined(__TINYC__)
+#define align(N) __attribute__((aligned(N)))
+#else
+#define align(N) __declspec(align(N))
+#endif
+
 #define cast(T) (T)
 #define size_of(T) sizeof(T)
 #define offset_of(T, F) (cast(u64) &(cast(T*) 0)->F)
@@ -63,3 +69,7 @@ typedef struct {
 	f32 z;
 	f32 w;
 } v4;
+
+typedef struct {
+	f32 e[16];
+} m4;
