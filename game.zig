@@ -315,7 +315,98 @@ const core = struct {
     };
 };
 
-pub usingnamespace switch (core.os_tag) {
+const opengl_renderer = struct {
+    var gl: core.meta.FnsToFnPtrs(struct {
+        pub usingnamespace core.opengl;
+        pub usingnamespace core.opengl.gl10;
+        pub usingnamespace core.opengl.gl20;
+        pub usingnamespace core.opengl.gl30;
+        pub usingnamespace core.opengl.gl45;
+    }) = undefined;
+
+    const os_gl = switch (core.os_tag) {
+        .windows => struct {
+            const w = platform.w;
+
+            var opengl_ctx: ?w.HGLRC = null;
+
+            pub fn init() void {
+                const platform_hdc = platform.platform_hdc;
+
+                const pfd = core.mem.zeroInit(w.PIXELFORMATDESCRIPTOR, .{
+                    .nSize = @sizeOf(w.PIXELFORMATDESCRIPTOR),
+                    .nVersion = 1,
+                    .dwFlags = w.PFD_DRAW_TO_WINDOW | w.PFD_SUPPORT_OPENGL |
+                        w.PFD_DOUBLEBUFFER | w.PFD_DEPTH_DONTCARE,
+                    .cColorBits = 24,
+                });
+                const format = w.ChoosePixelFormat(platform_hdc, &pfd);
+                _ = w.SetPixelFormat(platform_hdc, format, &pfd);
+
+                const temp_ctx = w.wglCreateContext(platform_hdc);
+                _ = w.wglMakeCurrent(platform_hdc, temp_ctx);
+
+                const wglCreateContextAttribsARB: w.PFN_wglCreateContextAttribsARB =
+                    @ptrCast(w.wglGetProcAddress("wglCreateContextAttribsARB").?);
+
+                const attribs = [_:0]c_int{
+                    w.WGL_CONTEXT_MAJOR_VERSION_ARB, 4,
+                    w.WGL_CONTEXT_MINOR_VERSION_ARB, 6,
+                    w.WGL_CONTEXT_FLAGS_ARB,         if (core.build_mode == .Debug) w.WGL_CONTEXT_DEBUG_BIT_ARB else 0,
+                    w.WGL_CONTEXT_PROFILE_MASK_ARB,  w.WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+                };
+                opengl_ctx = wglCreateContextAttribsARB(platform_hdc, null, &attribs).?;
+                _ = w.wglMakeCurrent(platform_hdc, opengl_ctx);
+
+                _ = w.wglDeleteContext(temp_ctx);
+
+                inline for (@typeInfo(@TypeOf(gl)).@"struct".fields) |field| {
+                    if (!field.is_comptime) {
+                        @field(gl, field.name) = if (@hasDecl(w, field.name))
+                            @field(w, field.name)
+                        else
+                            @ptrCast(w.wglGetProcAddress(field.name).?);
+                    }
+                }
+            }
+
+            pub fn deinit() void {
+                if (opengl_ctx != null) {
+                    _ = w.wglDeleteContext(opengl_ctx);
+                    opengl_ctx = null;
+                }
+            }
+
+            pub fn present() void {
+                _ = w.SwapBuffers(platform.platform_hdc);
+            }
+        },
+        else => @compileError("Unsupported OS"),
+    };
+
+    pub fn init() void {
+        os_gl.init();
+
+        gl.glClipControl(gl.GL_LOWER_LEFT, gl.GL_ZERO_TO_ONE);
+    }
+
+    pub fn deinit() void {
+        os_gl.deinit();
+    }
+
+    pub fn resize() void {}
+
+    pub fn present() void {
+        gl.glEnable(gl.GL_FRAMEBUFFER_SRGB);
+        gl.glViewport(0, 0, platform.platform_screen_width, platform.platform_screen_height);
+        gl.glClearColor(0.6, 0.2, 0.2, 1.0);
+        gl.glClear(gl.GL_COLOR_BUFFER_BIT);
+
+        os_gl.present();
+    }
+};
+
+const platform = switch (core.os_tag) {
     .windows => struct {
         const w = struct {
             usingnamespace core.windows;
@@ -326,13 +417,6 @@ pub usingnamespace switch (core.os_tag) {
             usingnamespace core.windows.dwmapi;
             usingnamespace core.windows.winmm;
         };
-        var gl: core.meta.FnsToFnPtrs(struct {
-            pub usingnamespace core.opengl;
-            pub usingnamespace core.opengl.gl10;
-            pub usingnamespace core.opengl.gl20;
-            pub usingnamespace core.opengl.gl30;
-            pub usingnamespace core.opengl.gl45;
-        }) = undefined;
         var steam: core.meta.FnsToFnPtrs(core.steam) = undefined;
 
         pub var platform_screen_width: u16 = undefined;
@@ -340,8 +424,6 @@ pub usingnamespace switch (core.os_tag) {
         pub var platform_hinstance: w.HINSTANCE = undefined;
         pub var platform_hwnd: w.HWND = undefined;
         pub var platform_hdc: w.HDC = undefined;
-
-        pub var opengl_ctx: ?w.HGLRC = null;
 
         fn toggleFullscreen() void {
             const S = struct {
@@ -364,6 +446,8 @@ pub usingnamespace switch (core.os_tag) {
                 w.WM_SIZE => {
                     platform_screen_width = @truncate(@as(usize, @bitCast(lParam)));
                     platform_screen_height = @truncate(@as(usize, @bitCast(lParam)) >> 16);
+
+                    opengl_renderer.resize();
                 },
                 w.WM_CREATE => {
                     platform_hwnd = hwnd.?;
@@ -374,49 +458,10 @@ pub usingnamespace switch (core.os_tag) {
                     const round_mode: c_ulong = w.DWMWCP_DONOTROUND;
                     _ = w.DwmSetWindowAttribute(hwnd, w.DWMWA_WINDOW_CORNER_PREFERENCE, &round_mode, @sizeOf(@TypeOf(round_mode)));
 
-                    const pfd = core.mem.zeroInit(w.PIXELFORMATDESCRIPTOR, .{
-                        .nSize = @sizeOf(w.PIXELFORMATDESCRIPTOR),
-                        .nVersion = 1,
-                        .dwFlags = w.PFD_DRAW_TO_WINDOW | w.PFD_SUPPORT_OPENGL |
-                            w.PFD_DOUBLEBUFFER | w.PFD_DEPTH_DONTCARE,
-                        .cColorBits = 24,
-                    });
-                    const format = w.ChoosePixelFormat(platform_hdc, &pfd);
-                    _ = w.SetPixelFormat(platform_hdc, format, &pfd);
-
-                    const temp_ctx = w.wglCreateContext(platform_hdc);
-                    _ = w.wglMakeCurrent(platform_hdc, temp_ctx);
-
-                    const wglCreateContextAttribsARB: w.PFN_wglCreateContextAttribsARB =
-                        @ptrCast(w.wglGetProcAddress("wglCreateContextAttribsARB").?);
-
-                    const attribs = [_:0]c_int{
-                        w.WGL_CONTEXT_MAJOR_VERSION_ARB, 4,
-                        w.WGL_CONTEXT_MINOR_VERSION_ARB, 6,
-                        w.WGL_CONTEXT_FLAGS_ARB,         if (core.build_mode == .Debug) w.WGL_CONTEXT_DEBUG_BIT_ARB else 0,
-                        w.WGL_CONTEXT_PROFILE_MASK_ARB,  w.WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
-                    };
-                    opengl_ctx = wglCreateContextAttribsARB(platform_hdc, null, &attribs).?;
-                    _ = w.wglMakeCurrent(platform_hdc, opengl_ctx);
-
-                    _ = w.wglDeleteContext(temp_ctx);
-
-                    inline for (@typeInfo(@TypeOf(gl)).@"struct".fields) |field| {
-                        if (!field.is_comptime) {
-                            @field(gl, field.name) = if (@hasDecl(w, field.name))
-                                @field(w, field.name)
-                            else
-                                @ptrCast(w.wglGetProcAddress(field.name).?);
-                        }
-                    }
-
-                    gl.glClipControl(gl.GL_LOWER_LEFT, gl.GL_ZERO_TO_ONE);
+                    opengl_renderer.init();
                 },
                 w.WM_DESTROY => {
-                    if (opengl_ctx != null) {
-                        _ = w.wglDeleteContext(opengl_ctx);
-                        opengl_ctx = null;
-                    }
+                    opengl_renderer.deinit();
 
                     w.PostQuitMessage(0);
                 },
@@ -503,11 +548,7 @@ pub usingnamespace switch (core.os_tag) {
 
                 if (steam_supported) steam.SteamAPI_RunCallbacks();
 
-                gl.glEnable(gl.GL_FRAMEBUFFER_SRGB);
-                gl.glViewport(0, 0, platform_screen_width, platform_screen_height);
-                gl.glClearColor(0.6, 0.2, 0.2, 1.0);
-                gl.glClear(gl.GL_COLOR_BUFFER_BIT);
-                _ = w.SwapBuffers(platform_hdc);
+                opengl_renderer.present();
 
                 if (sleep_is_granular) {
                     w.Sleep(1);
@@ -520,3 +561,5 @@ pub usingnamespace switch (core.os_tag) {
     },
     else => @compileError("Unsupported OS"),
 };
+
+pub usingnamespace platform;
