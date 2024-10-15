@@ -290,8 +290,8 @@ const core = struct {
         pub extern fn SteamAPI_InitFlat(?*const [1024]u8) SteamAPIInitResult;
         pub extern fn SteamAPI_RunCallbacks() void;
         pub extern fn SteamAPI_Shutdown() void;
-        pub extern fn SteamAPI_SteamFriends_v017() ISteamFriends;
-        pub extern fn SteamAPI_ISteamFriends_GetPersonaName(ISteamFriends) ?[*:0]const u8;
+        pub extern fn SteamAPI_SteamFriends_v017() ?ISteamFriends;
+        pub extern fn SteamAPI_ISteamFriends_GetPersonaName(?ISteamFriends) ?[*:0]const u8;
     };
 };
 
@@ -390,7 +390,7 @@ pub usingnamespace switch (core.os_tag) {
 
             const steam_supported = steam.SteamAPI_InitFlat(null) == .ok;
             if (steam_supported) {
-                const steam_friends = steam.SteamAPI_SteamFriends_v017();
+                const steam_friends = steam.SteamAPI_SteamFriends_v017().?;
                 const name = steam.SteamAPI_ISteamFriends_GetPersonaName(steam_friends);
                 _ = name;
             }
