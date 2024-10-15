@@ -237,12 +237,22 @@ const core = struct {
         };
 
         pub const opengl32 = struct {
+            pub const WGL_CONTEXT_MAJOR_VERSION_ARB = 0x2091;
+            pub const WGL_CONTEXT_MINOR_VERSION_ARB = 0x2092;
+            pub const WGL_CONTEXT_FLAGS_ARB = 0x2094;
+            pub const WGL_CONTEXT_PROFILE_MASK_ARB = 0x9126;
+            pub const WGL_CONTEXT_DEBUG_BIT_ARB = 0x0001;
+            pub const WGL_CONTEXT_CORE_PROFILE_BIT_ARB = 0x00000001;
+
             pub const HGLRC = *opaque {};
+            pub const PFN_wglCreateContextAttribsARB = *const fn (?user32.HDC, ?HGLRC, ?[*:0]const c_int) callconv(WINAPI) ?HGLRC;
 
             pub extern "opengl32" fn wglCreateContext(?user32.HDC) callconv(WINAPI) ?HGLRC;
             pub extern "opengl32" fn wglDeleteContext(?HGLRC) callconv(WINAPI) c_int;
             pub extern "opengl32" fn wglMakeCurrent(?user32.HDC, ?HGLRC) callconv(WINAPI) c_int;
             pub extern "opengl32" fn wglGetProcAddress(?[*:0]const u8) callconv(WINAPI) ?kernel32.PROC;
+
+            pub usingnamespace opengl.gl10;
         };
 
         pub const dwmapi = struct {
@@ -273,8 +283,18 @@ const core = struct {
             pub extern fn glClear(u32) callconv(GLAPI) void;
         };
 
+        pub const gl20 = struct {
+            pub const GL_LOWER_LEFT = 0x8CA1;
+        };
+
         pub const gl30 = struct {
             pub const GL_FRAMEBUFFER_SRGB = 0x8DB9;
+        };
+
+        pub const gl45 = struct {
+            pub const GL_ZERO_TO_ONE = 0x935F;
+
+            pub extern fn glClipControl(u32, u32) callconv(GLAPI) void;
         };
     };
 
@@ -306,11 +326,13 @@ pub usingnamespace switch (core.os_tag) {
             usingnamespace core.windows.dwmapi;
             usingnamespace core.windows.winmm;
         };
-        const gl = struct {
-            usingnamespace core.opengl;
-            usingnamespace core.opengl.gl10;
-            usingnamespace core.opengl.gl30;
-        };
+        var gl: core.meta.FnsToFnPtrs(struct {
+            pub usingnamespace core.opengl;
+            pub usingnamespace core.opengl.gl10;
+            pub usingnamespace core.opengl.gl20;
+            pub usingnamespace core.opengl.gl30;
+            pub usingnamespace core.opengl.gl45;
+        }) = undefined;
         var steam: core.meta.FnsToFnPtrs(core.steam) = undefined;
 
         pub var platform_screen_width: u16 = undefined;
@@ -318,6 +340,8 @@ pub usingnamespace switch (core.os_tag) {
         pub var platform_hinstance: w.HINSTANCE = undefined;
         pub var platform_hwnd: w.HWND = undefined;
         pub var platform_hdc: w.HDC = undefined;
+
+        pub var opengl_ctx: ?w.HGLRC = null;
 
         fn toggleFullscreen() void {
             const S = struct {
@@ -362,8 +386,38 @@ pub usingnamespace switch (core.os_tag) {
 
                     const temp_ctx = w.wglCreateContext(platform_hdc);
                     _ = w.wglMakeCurrent(platform_hdc, temp_ctx);
+
+                    const wglCreateContextAttribsARB: w.PFN_wglCreateContextAttribsARB =
+                        @ptrCast(w.wglGetProcAddress("wglCreateContextAttribsARB").?);
+
+                    const attribs = [_:0]c_int{
+                        w.WGL_CONTEXT_MAJOR_VERSION_ARB, 4,
+                        w.WGL_CONTEXT_MINOR_VERSION_ARB, 6,
+                        w.WGL_CONTEXT_FLAGS_ARB,         if (core.build_mode == .Debug) w.WGL_CONTEXT_DEBUG_BIT_ARB else 0,
+                        w.WGL_CONTEXT_PROFILE_MASK_ARB,  w.WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+                    };
+                    opengl_ctx = wglCreateContextAttribsARB(platform_hdc, null, &attribs).?;
+                    _ = w.wglMakeCurrent(platform_hdc, opengl_ctx);
+
+                    _ = w.wglDeleteContext(temp_ctx);
+
+                    inline for (@typeInfo(@TypeOf(gl)).@"struct".fields) |field| {
+                        if (!field.is_comptime) {
+                            @field(gl, field.name) = if (@hasDecl(w, field.name))
+                                @field(w, field.name)
+                            else
+                                @ptrCast(w.wglGetProcAddress(field.name).?);
+                        }
+                    }
+
+                    gl.glClipControl(gl.GL_LOWER_LEFT, gl.GL_ZERO_TO_ONE);
                 },
                 w.WM_DESTROY => {
+                    if (opengl_ctx != null) {
+                        _ = w.wglDeleteContext(opengl_ctx);
+                        opengl_ctx = null;
+                    }
+
                     w.PostQuitMessage(0);
                 },
                 else => {
