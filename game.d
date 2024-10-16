@@ -492,7 +492,7 @@ struct OpenGLRenderer {
         layout(location = 0) uniform sampler2D u_textures[32];
 
         void main() {
-            color = vec4(f_texcoord, 1.0, 1.0);
+            color = texture(u_textures[0], f_texcoord);
         }
         ";
         uint fshader = glCreateShader(GL_FRAGMENT_SHADER);
