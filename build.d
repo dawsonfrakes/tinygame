@@ -13,6 +13,7 @@ int main(string[] args) {
     if (args.length > 1) switch (args[1]) {
         case "run": ".out/game.exe".spawnProcess.wait; break;
         case "debug": "remedybg .out/game.exe".split.spawnProcess; break;
+        case "doc": "qrenderdoc .out/game.exe".split.spawnProcess; break;
         default: writeln("command '", args[1], "' not found");
     }
 

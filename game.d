@@ -232,14 +232,26 @@ alias steam_api64 = AliasSeq!(
     Procedure!(SteamAPIInitResult, "SteamAPI_InitFlat", const(char)[1024]*),
     Procedure!(void, "SteamAPI_RunCallbacks"),
     Procedure!(ISteamUser, "SteamAPI_SteamUser_v023"),
+    Procedure!(ulong, "SteamAPI_ISteamUser_GetSteamID", ISteamUser),
     Procedure!(ISteamUtils, "SteamAPI_SteamUtils_v010"),
+    Procedure!(bool, "SteamAPI_ISteamUtils_GetImageRGBA", ISteamUtils, int, ubyte*, int),
     Procedure!(ISteamFriends, "SteamAPI_SteamFriends_v017"),
+    Procedure!(int, "SteamAPI_ISteamFriends_GetMediumFriendAvatar", ISteamFriends, ulong),
     Procedure!(const(char)*, "SteamAPI_ISteamFriends_GetPersonaName", ISteamFriends),
     Procedure!(void, "SteamAPI_Shutdown"),
 );
 
 // gl10
 enum GL_COLOR_BUFFER_BIT = 0x00004000;
+enum GL_TEXTURE_2D = 0x0DE1;
+enum GL_UNSIGNED_BYTE = 0x1401;
+enum GL_FLOAT = 0x1406;
+enum GL_RGBA = 0x1908;
+enum GL_NEAREST = 0x2600;
+enum GL_LINEAR = 0x2601;
+enum GL_TEXTURE_MIN_FILTER = 0x2801;
+enum GL_TEXTURE_WRAP_S = 0x2802;
+enum GL_TEXTURE_WRAP_T = 0x2803;
 
 alias gl10 = AliasSeq!(
     Procedure!(void, "glEnable", uint),
@@ -249,17 +261,34 @@ alias gl10 = AliasSeq!(
     Procedure!(void, "glClear", uint),
 );
 
+// gl11
+enum GL_RGBA8 = 0x8058;
+
+// gl20
+enum GL_LOWER_LEFT = 0x8CA1;
+
 // gl30
 enum GL_FRAMEBUFFER_SRGB = 0x8DB9;
 
+// gl45
+enum GL_ZERO_TO_ONE = 0x935F;
+
+alias gl45 = AliasSeq!(
+    Procedure!(void, "glClipControl", uint, uint),
+    Procedure!(void, "glCreateTextures", uint, uint, uint*),
+    Procedure!(void, "glTextureStorage2D", uint, uint, uint, uint, uint),
+    Procedure!(void, "glTextureSubImage2D", uint, int, int, int, uint, uint, uint, uint, const(void)*),
+    Procedure!(void, "glTextureParameteri", uint, uint, int),
+);
+
 struct OpenGLRenderer {
     version (Windows) {
-        static foreach (proc; gl10) {
+        static foreach (proc; AliasSeq!(gl10, gl45)) {
             mixin("alias ReturnType_" ~ proc.name ~ " = " ~ proc.ReturnType.stringof ~ ";");
             mixin("__gshared extern(System) ReturnType_" ~ proc.name ~ " function" ~ proc.ArgTypes.stringof ~ " " ~ proc.name ~ ";");
         }
 
-        __gshared HGLRC ctx;
+        __gshared HGLRC ctx = null;
 
         static void platform_init() {
             HMODULE dll = LoadLibraryW("opengl32"w.ptr);
@@ -294,6 +323,10 @@ struct OpenGLRenderer {
             wglMakeCurrent(platform_hdc, ctx);
 
             wglDeleteContext(temp_ctx);
+
+            static foreach (proc; gl45) {
+                mixin(proc.name ~ " = cast(typeof(" ~ proc.name ~ ")) wglGetProcAddress(\"" ~ proc.name ~ "\");");
+            }
         }
 
         static void platform_deinit() {
@@ -309,7 +342,15 @@ struct OpenGLRenderer {
     static void init() {
         platform_init();
 
+        glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
+
         glEnable(GL_FRAMEBUFFER_SRGB);
+
+        uint texture = void;
+        glCreateTextures(GL_TEXTURE_2D, 1, &texture);
+        glTextureStorage2D(texture, 1, GL_RGBA8, 512, 512);
+        glTextureSubImage2D(texture, 0, 0, 0, 64, 64, GL_RGBA, GL_UNSIGNED_BYTE, steam_avatar_data.ptr);
+        glTextureParameteri(texture, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     }
 
     static void deinit() {
@@ -353,8 +394,15 @@ version (Windows) {
 
     __gshared ushort platform_screen_width = void;
     __gshared ushort platform_screen_height = void;
+
     __gshared bool platform_steam_enabled = false;
+    __gshared ISteamUser steam_user = void;
+    __gshared ISteamUtils steam_utils = void;
     __gshared ISteamFriends steam_friends = void;
+    __gshared ubyte[64 * 64 * 4] steam_avatar_data = void;
+    __gshared ulong steam_id = void;
+    __gshared const(char)* steam_name = void;
+
     __gshared HINSTANCE platform_hinstance = void;
     __gshared HWND platform_hwnd = void;
     __gshared HDC platform_hdc = void;
@@ -402,8 +450,15 @@ version (Windows) {
         platform_steam_enabled = SteamAPI_InitFlat && SteamAPI_InitFlat(null) == SteamAPIInitResult.ok;
 
         if (platform_steam_enabled) {
+            steam_user = SteamAPI_SteamUser_v023();
+            steam_utils = SteamAPI_SteamUtils_v010();
             steam_friends = SteamAPI_SteamFriends_v017();
-            const name = steam_friends.SteamAPI_ISteamFriends_GetPersonaName();
+
+            steam_id = steam_user.SteamAPI_ISteamUser_GetSteamID();
+            steam_name = steam_friends.SteamAPI_ISteamFriends_GetPersonaName();
+
+            int avatar = steam_friends.SteamAPI_ISteamFriends_GetMediumFriendAvatar(steam_id);
+            steam_utils.SteamAPI_ISteamUtils_GetImageRGBA(avatar, steam_avatar_data.ptr, steam_avatar_data.sizeof);
         }
 
         platform_hinstance = GetModuleHandleW(null);
