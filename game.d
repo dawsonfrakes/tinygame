@@ -1,13 +1,12 @@
 version (D_BetterC) {} else pragma(msg, "warning: -betterC recommended");
 
+alias Alias(T) = T;
+alias Alias(alias a) = a;
 alias AliasSeq(T...) = T;
 template Procedure(RT, string name_, Args...) {
-    struct Internal {
-        alias ReturnType = RT;
-        alias name = name_;
-        alias ArgTypes = Args;
-    }
-    enum Procedure = Internal();
+    alias ReturnType = RT;
+    alias name = name_;
+    alias ArgTypes = Args;
 }
 
 // kernel32
@@ -275,7 +274,21 @@ enum GL_STREAM_DRAW = 0x88E0;
 enum GL_STATIC_DRAW = 0x88E4;
 
 // gl20
+enum GL_FRAGMENT_SHADER = 0x8B30;
+enum GL_VERTEX_SHADER = 0x8B31;
 enum GL_LOWER_LEFT = 0x8CA1;
+
+alias gl20 = AliasSeq!(
+    Procedure!(uint, "glCreateProgram"),
+    Procedure!(void, "glAttachShader", uint, uint),
+    Procedure!(void, "glDetachShader", uint, uint),
+    Procedure!(void, "glLinkProgram", uint),
+    Procedure!(void, "glUseProgram", uint),
+    Procedure!(uint, "glCreateShader", uint),
+    Procedure!(void, "glDeleteShader", uint),
+    Procedure!(void, "glShaderSource", uint, uint, const(char*)*, const(int)*),
+    Procedure!(void, "glCompileShader", uint),
+);
 
 // gl30
 enum GL_FRAMEBUFFER_SRGB = 0x8DB9;
@@ -312,8 +325,16 @@ alias gl45 = AliasSeq!(
 );
 
 struct OpenGLRenderer {
+    enum gl_type(T) = {
+        final switch (T.sizeof) {
+            case 1: return __traits(isUnsigned, T) ? GL_UNSIGNED_BYTE : GL_BYTE;
+            case 2: return __traits(isUnsigned, T) ? GL_UNSIGNED_SHORT : GL_SHORT;
+            case 4: return __traits(isUnsigned, T) ? GL_UNSIGNED_INT : GL_INT;
+        }
+    }();
+
     version (Windows) {
-        static foreach (proc; AliasSeq!(gl10, gl30, gl42, gl45)) {
+        static foreach (proc; AliasSeq!(gl10, gl20, gl30, gl42, gl45)) {
             mixin("alias ReturnType_" ~ proc.name ~ " = " ~ proc.ReturnType.stringof ~ ";");
             mixin("__gshared extern(System) ReturnType_" ~ proc.name ~ " function" ~ proc.ArgTypes.stringof ~ " " ~ proc.name ~ ";");
         }
@@ -354,7 +375,7 @@ struct OpenGLRenderer {
 
             wglDeleteContext(temp_ctx);
 
-            static foreach (proc; AliasSeq!(gl30, gl42, gl45)) {
+            static foreach (proc; AliasSeq!(gl20, gl30, gl42, gl45)) {
                 mixin(proc.name ~ " = cast(typeof(" ~ proc.name ~ ")) wglGetProcAddress(\"" ~ proc.name ~ "\");");
             }
         }
@@ -369,7 +390,7 @@ struct OpenGLRenderer {
         }
     }
 
-    struct Mesh {
+    struct OpenGLRectMesh {
         alias Element = ubyte;
 
         struct Vertex {
@@ -381,27 +402,20 @@ struct OpenGLRenderer {
             uint texture_offset;
         }
 
-        enum gl_type_of_element(T) = {
-            final switch (T.sizeof) {
-                case 1: return __traits(isUnsigned, T) ? GL_UNSIGNED_BYTE : GL_BYTE;
-                case 2: return __traits(isUnsigned, T) ? GL_UNSIGNED_SHORT : GL_SHORT;
-                case 4: return __traits(isUnsigned, T) ? GL_UNSIGNED_INT : GL_INT;
-            }
-        }();
-
         uint vao;
         uint ibo;
+        uint shader;
     }
 
-    static immutable Mesh.Element[6] indices = [0, 1, 2, 2, 3, 0];
-    static immutable Mesh.Vertex[4] vertices = [
-        Mesh.Vertex([-0.5, -0.5, 0.0]),
-        Mesh.Vertex([+0.5, -0.5, 0.0]),
-        Mesh.Vertex([+0.5, +0.5, 0.0]),
-        Mesh.Vertex([-0.5, +0.5, 0.0]),
+    static immutable OpenGLRectMesh.Element[6] indices = [0, 1, 2, 2, 3, 0];
+    static immutable OpenGLRectMesh.Vertex[4] vertices = [
+        {[-0.5, -0.5, 0.0]},
+        {[+0.5, -0.5, 0.0]},
+        {[+0.5, +0.5, 0.0]},
+        {[-0.5, +0.5, 0.0]},
     ];
 
-    __gshared Mesh mesh;
+    __gshared OpenGLRectMesh opengl_rect_mesh = void;
 
     static void init() {
         platform_init();
@@ -419,23 +433,23 @@ struct OpenGLRenderer {
         uint ibo = void;
         glCreateBuffers(1, &ibo);
 
-        mesh.ibo = ibo;
+        opengl_rect_mesh.ibo = ibo;
 
         uint vao = void;
         glCreateVertexArrays(1, &vao);
         glVertexArrayElementBuffer(vao, ebo);
         uint vbo_binding = 0;
-        glVertexArrayVertexBuffer(vao, vbo_binding, vbo, 0, Mesh.Vertex.sizeof);
+        glVertexArrayVertexBuffer(vao, vbo_binding, vbo, 0, OpenGLRectMesh.Vertex.sizeof);
         uint ibo_binding = 1;
-        glVertexArrayVertexBuffer(vao, ibo_binding, ibo, 0, Mesh.Instance.sizeof);
+        glVertexArrayVertexBuffer(vao, ibo_binding, ibo, 0, OpenGLRectMesh.Instance.sizeof);
         glVertexArrayBindingDivisor(vao, ibo_binding, 1);
 
         uint position_attrib = 0;
         glEnableVertexArrayAttrib(vao, position_attrib);
         glVertexArrayAttribBinding(vao, position_attrib, vbo_binding);
-        glVertexArrayAttribFormat(vao, position_attrib, 3, GL_FLOAT, false, Mesh.Vertex.position.offsetof);
+        glVertexArrayAttribFormat(vao, position_attrib, 3, GL_FLOAT, false, OpenGLRectMesh.Vertex.position.offsetof);
 
-        mesh.vao = vao;
+        opengl_rect_mesh.vao = vao;
 
         uint texture = void;
         glCreateTextures(GL_TEXTURE_2D, 1, &texture);
@@ -443,6 +457,60 @@ struct OpenGLRenderer {
         glTextureSubImage2D(texture, 0, 0, 0, 64, 64, GL_RGBA, GL_UNSIGNED_BYTE, steam_avatar_data.ptr);
         glTextureParameteri(texture, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glBindTextureUnit(0, texture);
+
+        string vsrc =
+        "#version 450
+
+        layout(location = 0) in vec3 a_position;
+
+        layout(location = 0) out vec2 f_texcoord;
+
+        vec2[] g_texcoords = vec2[](
+            vec2(0.0, 0.0),
+            vec2(1.0, 0.0),
+            vec2(1.0, 1.0),
+            vec2(0.0, 1.0)
+        );
+
+        void main() {
+            gl_Position = vec4(a_position, 1.0);
+            f_texcoord = g_texcoords[gl_VertexID];
+        }
+        ";
+        uint vshader = glCreateShader(GL_VERTEX_SHADER);
+        immutable(char*)[1] vsrcs = [vsrc.ptr];
+        glShaderSource(vshader, 1, vsrcs.ptr, null);
+        glCompileShader(vshader);
+
+        string fsrc =
+        "#version 450
+
+        layout(location = 0) in vec2 f_texcoord;
+
+        layout(location = 0) out vec4 color;
+
+        layout(location = 0) uniform sampler2D u_textures[32];
+
+        void main() {
+            color = vec4(f_texcoord, 1.0, 1.0);
+        }
+        ";
+        uint fshader = glCreateShader(GL_FRAGMENT_SHADER);
+        immutable(char*)[1] fsrcs = [fsrc.ptr];
+        glShaderSource(fshader, 1, fsrcs.ptr, null);
+        glCompileShader(fshader);
+
+        uint program = glCreateProgram();
+        glAttachShader(program, vshader);
+        glAttachShader(program, fshader);
+        glLinkProgram(program);
+        glDetachShader(program, fshader);
+        glDetachShader(program, vshader);
+
+        glDeleteShader(fshader);
+        glDeleteShader(vshader);
+
+        opengl_rect_mesh.shader = program;
     }
 
     static void deinit() {
@@ -458,14 +526,13 @@ struct OpenGLRenderer {
         glClearColor(0.6, 0.2, 0.2, 1.0);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        Mesh.Instance[1] instances = [
-            Mesh.Instance.init,
-        ];
-        glNamedBufferData(mesh.ibo, instances.sizeof, instances.ptr, GL_STREAM_DRAW);
+        OpenGLRectMesh.Instance[1] instances = [{}];
+        glNamedBufferData(opengl_rect_mesh.ibo, instances.sizeof, instances.ptr, GL_STREAM_DRAW);
 
-        glBindVertexArray(mesh.vao);
+        glUseProgram(opengl_rect_mesh.shader);
+        glBindVertexArray(opengl_rect_mesh.vao);
         glDrawElementsInstancedBaseVertexBaseInstance(GL_TRIANGLES,
-            indices.length, Mesh.gl_type_of_element!(Mesh.Element), cast(void*) 0,
+            indices.length, gl_type!(OpenGLRectMesh.Element), cast(void*) 0,
             instances.length, 0, 0);
 
         platform_present();
