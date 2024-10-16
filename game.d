@@ -218,6 +218,9 @@ alias winmm = AliasSeq!(
 );
 
 // steam_api64
+struct ISteamUser__; alias ISteamUser = ISteamUser__*;
+struct ISteamUtils__; alias ISteamUtils = ISteamUtils__*;
+struct ISteamFriends__; alias ISteamFriends = ISteamFriends__*;
 enum SteamAPIInitResult {
     ok,
     failed_generic,
@@ -228,11 +231,16 @@ enum SteamAPIInitResult {
 alias steam_api64 = AliasSeq!(
     Procedure!(SteamAPIInitResult, "SteamAPI_InitFlat", const(char)[1024]*),
     Procedure!(void, "SteamAPI_RunCallbacks"),
+    Procedure!(ISteamUser, "SteamAPI_SteamUser_v023"),
+    Procedure!(ISteamUtils, "SteamAPI_SteamUtils_v010"),
+    Procedure!(ISteamFriends, "SteamAPI_SteamFriends_v017"),
+    Procedure!(const(char)*, "SteamAPI_ISteamFriends_GetPersonaName", ISteamFriends),
     Procedure!(void, "SteamAPI_Shutdown"),
 );
 
 // gl10
 enum GL_COLOR_BUFFER_BIT = 0x00004000;
+
 alias gl10 = AliasSeq!(
     Procedure!(void, "glEnable", uint),
     Procedure!(void, "glDisable", uint),
@@ -248,7 +256,7 @@ struct OpenGLRenderer {
     version (Windows) {
         static foreach (proc; gl10) {
             mixin("alias ReturnType_" ~ proc.name ~ " = " ~ proc.ReturnType.stringof ~ ";");
-            mixin("__gshared extern(C) ReturnType_" ~ proc.name ~ " function" ~ proc.ArgTypes.stringof ~ " " ~ proc.name ~ ";");
+            mixin("__gshared extern(System) ReturnType_" ~ proc.name ~ " function" ~ proc.ArgTypes.stringof ~ " " ~ proc.name ~ ";");
         }
 
         __gshared HGLRC ctx;
@@ -346,6 +354,7 @@ version (Windows) {
     __gshared ushort platform_screen_width = void;
     __gshared ushort platform_screen_height = void;
     __gshared bool platform_steam_enabled = false;
+    __gshared ISteamFriends steam_friends = void;
     __gshared HINSTANCE platform_hinstance = void;
     __gshared HWND platform_hwnd = void;
     __gshared HDC platform_hdc = void;
@@ -391,6 +400,11 @@ version (Windows) {
         }
 
         platform_steam_enabled = SteamAPI_InitFlat && SteamAPI_InitFlat(null) == SteamAPIInitResult.ok;
+
+        if (platform_steam_enabled) {
+            steam_friends = SteamAPI_SteamFriends_v017();
+            const name = steam_friends.SteamAPI_ISteamFriends_GetPersonaName();
+        }
 
         platform_hinstance = GetModuleHandleW(null);
 
