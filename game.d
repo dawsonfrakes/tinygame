@@ -243,8 +243,14 @@ alias steam_api64 = AliasSeq!(
 
 // gl10
 enum GL_COLOR_BUFFER_BIT = 0x00004000;
+enum GL_TRIANGLES = 0x0004;
 enum GL_TEXTURE_2D = 0x0DE1;
+enum GL_BYTE = 0x1400;
 enum GL_UNSIGNED_BYTE = 0x1401;
+enum GL_SHORT = 0x1402;
+enum GL_UNSIGNED_SHORT = 0x1403;
+enum GL_INT = 0x1404;
+enum GL_UNSIGNED_INT = 0x1405;
 enum GL_FLOAT = 0x1406;
 enum GL_RGBA = 0x1908;
 enum GL_NEAREST = 0x2600;
@@ -264,26 +270,50 @@ alias gl10 = AliasSeq!(
 // gl11
 enum GL_RGBA8 = 0x8058;
 
+// gl15
+enum GL_STREAM_DRAW = 0x88E0;
+enum GL_STATIC_DRAW = 0x88E4;
+
 // gl20
 enum GL_LOWER_LEFT = 0x8CA1;
 
 // gl30
 enum GL_FRAMEBUFFER_SRGB = 0x8DB9;
 
+alias gl30 = AliasSeq!(
+    Procedure!(void, "glBindFramebuffer", uint, uint),
+    Procedure!(void, "glBindVertexArray", uint),
+);
+
+// gl42
+alias gl42 = AliasSeq!(
+    Procedure!(void, "glDrawElementsInstancedBaseVertexBaseInstance", uint, uint, uint, const(void)*, uint, int, uint),
+);
+
 // gl45
 enum GL_ZERO_TO_ONE = 0x935F;
 
 alias gl45 = AliasSeq!(
     Procedure!(void, "glClipControl", uint, uint),
+    Procedure!(void, "glCreateVertexArrays", uint, uint*),
+    Procedure!(void, "glVertexArrayElementBuffer", uint, uint),
+    Procedure!(void, "glVertexArrayVertexBuffer", uint, uint, uint, ptrdiff_t, uint),
+    Procedure!(void, "glVertexArrayBindingDivisor", uint, uint, uint),
+    Procedure!(void, "glEnableVertexArrayAttrib", uint, uint),
+    Procedure!(void, "glVertexArrayAttribBinding", uint, uint, uint),
+    Procedure!(void, "glVertexArrayAttribFormat", uint, uint, int, uint, bool, uint),
+    Procedure!(void, "glCreateBuffers", uint, uint*),
+    Procedure!(void, "glNamedBufferData", uint, size_t, const(void)*, uint),
     Procedure!(void, "glCreateTextures", uint, uint, uint*),
     Procedure!(void, "glTextureStorage2D", uint, uint, uint, uint, uint),
     Procedure!(void, "glTextureSubImage2D", uint, int, int, int, uint, uint, uint, uint, const(void)*),
     Procedure!(void, "glTextureParameteri", uint, uint, int),
+    Procedure!(void, "glBindTextureUnit", uint, uint),
 );
 
 struct OpenGLRenderer {
     version (Windows) {
-        static foreach (proc; AliasSeq!(gl10, gl45)) {
+        static foreach (proc; AliasSeq!(gl10, gl30, gl42, gl45)) {
             mixin("alias ReturnType_" ~ proc.name ~ " = " ~ proc.ReturnType.stringof ~ ";");
             mixin("__gshared extern(System) ReturnType_" ~ proc.name ~ " function" ~ proc.ArgTypes.stringof ~ " " ~ proc.name ~ ";");
         }
@@ -324,7 +354,7 @@ struct OpenGLRenderer {
 
             wglDeleteContext(temp_ctx);
 
-            static foreach (proc; gl45) {
+            static foreach (proc; AliasSeq!(gl30, gl42, gl45)) {
                 mixin(proc.name ~ " = cast(typeof(" ~ proc.name ~ ")) wglGetProcAddress(\"" ~ proc.name ~ "\");");
             }
         }
@@ -339,6 +369,40 @@ struct OpenGLRenderer {
         }
     }
 
+    struct Mesh {
+        alias Element = ubyte;
+
+        struct Vertex {
+            float[3] position;
+        }
+
+        struct Instance {
+            uint texture_index;
+            uint texture_offset;
+        }
+
+        enum gl_type_of_element(T) = {
+            final switch (T.sizeof) {
+                case 1: return __traits(isUnsigned, T) ? GL_UNSIGNED_BYTE : GL_BYTE;
+                case 2: return __traits(isUnsigned, T) ? GL_UNSIGNED_SHORT : GL_SHORT;
+                case 4: return __traits(isUnsigned, T) ? GL_UNSIGNED_INT : GL_INT;
+            }
+        }();
+
+        uint vao;
+        uint ibo;
+    }
+
+    static immutable Mesh.Element[6] indices = [0, 1, 2, 2, 3, 0];
+    static immutable Mesh.Vertex[4] vertices = [
+        Mesh.Vertex([-0.5, -0.5, 0.0]),
+        Mesh.Vertex([+0.5, -0.5, 0.0]),
+        Mesh.Vertex([+0.5, +0.5, 0.0]),
+        Mesh.Vertex([-0.5, +0.5, 0.0]),
+    ];
+
+    __gshared Mesh mesh;
+
     static void init() {
         platform_init();
 
@@ -346,11 +410,39 @@ struct OpenGLRenderer {
 
         glEnable(GL_FRAMEBUFFER_SRGB);
 
+        uint ebo = void;
+        glCreateBuffers(1, &ebo);
+        glNamedBufferData(ebo, indices.sizeof, indices.ptr, GL_STATIC_DRAW);
+        uint vbo = void;
+        glCreateBuffers(1, &vbo);
+        glNamedBufferData(vbo, vertices.sizeof, vertices.ptr, GL_STATIC_DRAW);
+        uint ibo = void;
+        glCreateBuffers(1, &ibo);
+
+        mesh.ibo = ibo;
+
+        uint vao = void;
+        glCreateVertexArrays(1, &vao);
+        glVertexArrayElementBuffer(vao, ebo);
+        uint vbo_binding = 0;
+        glVertexArrayVertexBuffer(vao, vbo_binding, vbo, 0, Mesh.Vertex.sizeof);
+        uint ibo_binding = 1;
+        glVertexArrayVertexBuffer(vao, ibo_binding, ibo, 0, Mesh.Instance.sizeof);
+        glVertexArrayBindingDivisor(vao, ibo_binding, 1);
+
+        uint position_attrib = 0;
+        glEnableVertexArrayAttrib(vao, position_attrib);
+        glVertexArrayAttribBinding(vao, position_attrib, vbo_binding);
+        glVertexArrayAttribFormat(vao, position_attrib, 3, GL_FLOAT, false, Mesh.Vertex.position.offsetof);
+
+        mesh.vao = vao;
+
         uint texture = void;
         glCreateTextures(GL_TEXTURE_2D, 1, &texture);
         glTextureStorage2D(texture, 1, GL_RGBA8, 512, 512);
         glTextureSubImage2D(texture, 0, 0, 0, 64, 64, GL_RGBA, GL_UNSIGNED_BYTE, steam_avatar_data.ptr);
         glTextureParameteri(texture, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glBindTextureUnit(0, texture);
     }
 
     static void deinit() {
@@ -365,6 +457,16 @@ struct OpenGLRenderer {
         glViewport(0, 0, platform_screen_width, platform_screen_height);
         glClearColor(0.6, 0.2, 0.2, 1.0);
         glClear(GL_COLOR_BUFFER_BIT);
+
+        Mesh.Instance[1] instances = [
+            Mesh.Instance.init,
+        ];
+        glNamedBufferData(mesh.ibo, instances.sizeof, instances.ptr, GL_STREAM_DRAW);
+
+        glBindVertexArray(mesh.vao);
+        glDrawElementsInstancedBaseVertexBaseInstance(GL_TRIANGLES,
+            indices.length, Mesh.gl_type_of_element!(Mesh.Element), cast(void*) 0,
+            instances.length, 0, 0);
 
         platform_present();
     }
