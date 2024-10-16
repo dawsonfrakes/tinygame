@@ -184,7 +184,15 @@ alias gdi32 = AliasSeq!(
 );
 
 // opengl32
+enum WGL_CONTEXT_MAJOR_VERSION_ARB = 0x2091;
+enum WGL_CONTEXT_MINOR_VERSION_ARB = 0x2092;
+enum WGL_CONTEXT_FLAGS_ARB = 0x2094;
+enum WGL_CONTEXT_PROFILE_MASK_ARB = 0x9126;
+enum WGL_CONTEXT_DEBUG_BIT_ARB = 0x0001;
+enum WGL_CONTEXT_CORE_PROFILE_BIT_ARB = 0x00000001;
+
 struct HGLRC__; alias HGLRC = HGLRC__*;
+alias PFN_wglCreateContextAttribsARB = extern(Windows) HGLRC function(HDC, HGLRC, const(int)*);
 
 alias opengl32 = AliasSeq!(
     Procedure!(HGLRC, "wglCreateContext", HDC),
@@ -243,6 +251,8 @@ struct OpenGLRenderer {
             mixin("__gshared extern(C) ReturnType_" ~ proc.name ~ " function" ~ proc.ArgTypes.stringof ~ " " ~ proc.name ~ ";");
         }
 
+        __gshared HGLRC ctx;
+
         static void platform_init() {
             HMODULE dll = LoadLibraryW("opengl32"w.ptr);
             static foreach (proc; gl10) {
@@ -260,10 +270,27 @@ struct OpenGLRenderer {
 
             HGLRC temp_ctx = wglCreateContext(platform_hdc);
             wglMakeCurrent(platform_hdc, temp_ctx);
+
+            auto wglCreateContextAttribsARB =
+                cast(PFN_wglCreateContextAttribsARB)
+                wglGetProcAddress("wglCreateContextAttribsARB");
+
+            immutable int[9] attribs = [
+                WGL_CONTEXT_MAJOR_VERSION_ARB, 4,
+                WGL_CONTEXT_MINOR_VERSION_ARB, 6,
+                WGL_CONTEXT_FLAGS_ARB, DEVELOPER ? WGL_CONTEXT_DEBUG_BIT_ARB : 0,
+                WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+                0,
+            ];
+            ctx = wglCreateContextAttribsARB(platform_hdc, null, attribs.ptr);
+            wglMakeCurrent(platform_hdc, ctx);
+
+            wglDeleteContext(temp_ctx);
         }
 
         static void platform_deinit() {
-
+            if (ctx) wglDeleteContext(ctx);
+            ctx = null;
         }
 
         static void platform_present() {
