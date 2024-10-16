@@ -160,6 +160,22 @@ version(Windows) {
     );
 }
 
+version = Steam;
+version (Steam) {
+    enum SteamAPIInitResult {
+        ok,
+        failed_generic,
+        no_steam_client,
+        version_mismatch,
+    }
+
+    alias steam_api64 = AliasSeq!(
+        Procedure!(SteamAPIInitResult, "SteamAPI_InitFlat", const(char)[1024]*),
+        Procedure!(void, "SteamAPI_RunCallbacks"),
+        Procedure!(void, "SteamAPI_Shutdown"),
+    );
+}
+
 version (Windows) {
     enum DEVELOPER = true;
 
@@ -176,8 +192,14 @@ version (Windows) {
         }
     }
 
+    static foreach (proc; steam_api64) {
+        mixin("alias ReturnType_" ~ proc.name ~ " = " ~ proc.ReturnType.stringof ~ ";");
+        mixin("__gshared extern(C) ReturnType_" ~ proc.name ~ " function" ~ proc.ArgTypes.stringof ~ " " ~ proc.name ~ ";");
+    }
+
     __gshared ushort platform_screen_width = void;
     __gshared ushort platform_screen_height = void;
+    __gshared bool platform_steam_enabled = false;
     __gshared HINSTANCE platform_hinstance = void;
     __gshared HWND platform_hwnd = void;
     __gshared HDC platform_hdc = void;
@@ -215,12 +237,14 @@ version (Windows) {
 
     extern(Windows) noreturn WinMainCRTStartup() {
         HMODULE dll = void;
-        static foreach (lib; dynamic_procedure_modules) {
+        static foreach (lib; dynamic_procedure_modules ~ ["steam_api64"]) {
             mixin("dll = LoadLibraryW(\"" ~ lib ~ "\"w.ptr);");
             static foreach (proc; mixin(lib)) {
                 mixin(proc.name ~ " = cast(typeof(" ~ proc.name ~ ")) GetProcAddress(dll, \"" ~ proc.name ~ "\");");
             }
         }
+
+        platform_steam_enabled = SteamAPI_InitFlat && SteamAPI_InitFlat(null) == SteamAPIInitResult.ok;
 
         platform_hinstance = GetModuleHandleW(null);
 
@@ -303,11 +327,14 @@ version (Windows) {
                 }
             }
 
+            if (platform_steam_enabled) SteamAPI_RunCallbacks();
+
             if (sleep_is_granular) {
                 Sleep(1);
             }
         }
 
+        if (platform_steam_enabled) SteamAPI_Shutdown();
         ExitProcess(0);
     }
 
