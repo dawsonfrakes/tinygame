@@ -1,6 +1,5 @@
 #import "Basic";
 #import "Compiler";
-#import "Process";
 
 build :: () {
 	options := get_build_options();
@@ -9,6 +8,7 @@ build :: () {
 	options.output_type = .EXECUTABLE;
 	options.runtime_support_definitions = .OMIT;
 	options.output_executable_name = "Colliders";
+	options.output_path = tprint("%/.build", #filepath);
 
 	w := compiler_create_workspace("Colliders");
 	set_build_options(options, w);

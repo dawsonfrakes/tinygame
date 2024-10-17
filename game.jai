@@ -83,6 +83,15 @@ ascii_to_utf16le_string_literal :: ($s: string) -> []u16 {
 	DispatchMessageW :: (_: *MSG) -> s64 #foreign user32;
 	DefWindowProcW :: (_: HWND, _: u32, _: u64, _: s64) -> s64 #foreign user32;
 	PostQuitMessage :: (_: s32) #foreign user32;
+	GetDC :: (_: HWND) -> HDC #foreign user32;
+
+	dwmapi :: #system_library "dwmapi";
+
+	DWMWA_USE_IMMERSIVE_DARK_MODE :: 20;
+	DWMWA_WINDOW_CORNER_PREFERENCE :: 33;
+	DWMWCP_DONOTROUND :: 1;
+
+	DwmSetWindowAttribute :: (_: HWND, _: u32, _: *void, _: u32) -> s32 #foreign dwmapi;
 
 	winmm :: #system_library "winmm";
 
@@ -93,11 +102,21 @@ ascii_to_utf16le_string_literal :: ($s: string) -> []u16 {
 
 #if OS == .WINDOWS {
 	platform_hinstance : HINSTANCE = ---;
+	platform_hwnd : HWND = ---;
+	platform_hdc : HDC = ---;
 
 	#scope_file
 
 	window_proc :: (hwnd: HWND, message: u32, wParam: u64, lParam: s64) -> s64 #c_call {
 		if message == {
+		case WM_CREATE;
+			platform_hwnd = hwnd;
+			platform_hdc = GetDC(hwnd);
+
+			dark_mode : s32 = xx true;
+			DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, *dark_mode, size_of(type_of(dark_mode)));
+			round_mode : s32 = DWMWCP_DONOTROUND;
+			DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, *round_mode, size_of(type_of(round_mode)));
 		case WM_DESTROY;
 			PostQuitMessage(0);
 		case;
@@ -111,6 +130,7 @@ ascii_to_utf16le_string_literal :: ($s: string) -> []u16 {
 
 		sleep_is_granular := timeBeginPeriod(1) == TIMERR_NOERROR;
 
+		SetProcessDPIAware();
 		wndclass : WNDCLASSEXW;
 		wndclass.cbSize = size_of(WNDCLASSEXW);
 		wndclass.style = CS_OWNDC;
@@ -142,8 +162,6 @@ ascii_to_utf16le_string_literal :: ($s: string) -> []u16 {
 				Sleep(1);
 			}
 		}
-
-		SetProcessDPIAware();
 	}
 
 	RawEntryPoint :: () #c_call #elsewhere {
