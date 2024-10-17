@@ -8,6 +8,8 @@ template Procedure(RT, string name_, Args...) {
     alias name = name_;
     alias ArgTypes = Args;
 }
+T min(T, U)(T x, U y) => x < y ? x : y;
+T max(T, U)(T x, U y) => x > y ? x : y;
 
 // kernel32
 struct HINSTANCE__; alias HINSTANCE = HINSTANCE__*;
@@ -47,6 +49,8 @@ enum WM_KEYUP = 0x0101;
 enum WM_SYSKEYDOWN = 0x0104;
 enum WM_SYSKEYUP = 0x0105;
 enum WM_SYSCOMMAND = 0x0112;
+enum WM_MOUSEWHEEL = 0x020A;
+enum WHEEL_DELTA = 120;
 enum SC_KEYMENU = 0xF100;
 enum GWL_STYLE = -16;
 enum HWND_TOP = cast(HWND) 0;
@@ -226,6 +230,20 @@ enum SteamAPIInitResult {
     no_steam_client,
     version_mismatch,
 }
+enum SteamAPIFriendFlags {
+    none = 0x00,
+    blocked = 0x01,
+    friendship_requested = 0x02,
+    immediate = 0x04,
+    clan_member = 0x08,
+    on_game_server = 0x10,
+    requesting_friendship = 0x80,
+    requesting_info = 0x100,
+    ignored = 0x200,
+    ignored_friend = 0x400,
+    chat_member = 0x1000,
+    all = 0xFFFF,
+}
 
 alias steam_api64 = AliasSeq!(
     Procedure!(SteamAPIInitResult, "SteamAPI_InitFlat", const(char)[1024]*),
@@ -235,6 +253,8 @@ alias steam_api64 = AliasSeq!(
     Procedure!(ISteamUtils, "SteamAPI_SteamUtils_v010"),
     Procedure!(bool, "SteamAPI_ISteamUtils_GetImageRGBA", ISteamUtils, int, ubyte*, int),
     Procedure!(ISteamFriends, "SteamAPI_SteamFriends_v017"),
+    Procedure!(int, "SteamAPI_ISteamFriends_GetFriendCount", ISteamFriends, int),
+    Procedure!(ulong, "SteamAPI_ISteamFriends_GetFriendByIndex", ISteamFriends, int, int),
     Procedure!(int, "SteamAPI_ISteamFriends_GetMediumFriendAvatar", ISteamFriends, ulong),
     Procedure!(const(char)*, "SteamAPI_ISteamFriends_GetPersonaName", ISteamFriends),
     Procedure!(void, "SteamAPI_Shutdown"),
@@ -268,6 +288,9 @@ alias gl10 = AliasSeq!(
 
 // gl11
 enum GL_RGBA8 = 0x8058;
+
+// gl12
+enum GL_CLAMP_TO_EDGE = 0x812F;
 
 // gl15
 enum GL_STREAM_DRAW = 0x88E0;
@@ -315,6 +338,7 @@ alias gl45 = AliasSeq!(
     Procedure!(void, "glEnableVertexArrayAttrib", uint, uint),
     Procedure!(void, "glVertexArrayAttribBinding", uint, uint, uint),
     Procedure!(void, "glVertexArrayAttribFormat", uint, uint, int, uint, bool, uint),
+    Procedure!(void, "glVertexArrayAttribIFormat", uint, uint, int, uint, uint),
     Procedure!(void, "glCreateBuffers", uint, uint*),
     Procedure!(void, "glNamedBufferData", uint, size_t, const(void)*, uint),
     Procedure!(void, "glCreateTextures", uint, uint, uint*),
@@ -415,7 +439,7 @@ struct OpenGLRenderer {
         {[-0.5, +0.5, 0.0]},
     ];
 
-    __gshared OpenGLRectMesh opengl_rect_mesh = void;
+    __gshared OpenGLRectMesh rect_mesh = void;
 
     static void init() {
         platform_init();
@@ -433,7 +457,7 @@ struct OpenGLRenderer {
         uint ibo = void;
         glCreateBuffers(1, &ibo);
 
-        opengl_rect_mesh.ibo = ibo;
+        rect_mesh.ibo = ibo;
 
         uint vao = void;
         glCreateVertexArrays(1, &vao);
@@ -449,32 +473,76 @@ struct OpenGLRenderer {
         glVertexArrayAttribBinding(vao, position_attrib, vbo_binding);
         glVertexArrayAttribFormat(vao, position_attrib, 3, GL_FLOAT, false, OpenGLRectMesh.Vertex.position.offsetof);
 
-        opengl_rect_mesh.vao = vao;
+        uint texture_index_attrib = 1;
+        glEnableVertexArrayAttrib(vao, texture_index_attrib);
+        glVertexArrayAttribBinding(vao, texture_index_attrib, ibo_binding);
+        glVertexArrayAttribIFormat(vao, texture_index_attrib, 1, GL_UNSIGNED_INT, OpenGLRectMesh.Instance.texture_index.offsetof);
+
+        uint texture_offset_attrib = 2;
+        glEnableVertexArrayAttrib(vao, texture_offset_attrib);
+        glVertexArrayAttribBinding(vao, texture_offset_attrib, ibo_binding);
+        glVertexArrayAttribIFormat(vao, texture_offset_attrib, 1, GL_UNSIGNED_INT, OpenGLRectMesh.Instance.texture_offset.offsetof);
+
+        rect_mesh.vao = vao;
 
         uint texture = void;
+        enum texture_dim = 512;
         glCreateTextures(GL_TEXTURE_2D, 1, &texture);
-        glTextureStorage2D(texture, 1, GL_RGBA8, 512, 512);
-        glTextureSubImage2D(texture, 0, 0, 0, 64, 64, GL_RGBA, GL_UNSIGNED_BYTE, steam_avatar_data.ptr);
+        glTextureStorage2D(texture, 1, GL_RGBA8, texture_dim, texture_dim);
         glTextureParameteri(texture, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTextureParameteri(texture, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTextureParameteri(texture, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glBindTextureUnit(0, texture);
+
+        enum avatar_dim = 64;
+        enum avatar_per_dim = texture_dim / avatar_dim;
+        if (platform_steam_enabled) {
+            steam_friend_count = steam_friends.SteamAPI_ISteamFriends_GetFriendCount(SteamAPIFriendFlags.all);
+            if (steam_friend_count > 0) {
+                __gshared ubyte[avatar_dim * avatar_dim * 4] steam_temp_avatar_data = void;
+
+                int i = 0;
+                outer: foreach (row; 0..avatar_per_dim) {
+                    foreach (col; 0..avatar_per_dim) {
+                        ulong friend_id = steam_friends.SteamAPI_ISteamFriends_GetFriendByIndex(i, SteamAPIFriendFlags.all);
+                        int avatar = steam_friends.SteamAPI_ISteamFriends_GetMediumFriendAvatar(friend_id);
+                        steam_utils.SteamAPI_ISteamUtils_GetImageRGBA(avatar, steam_temp_avatar_data.ptr, steam_temp_avatar_data.sizeof);
+                        glTextureSubImage2D(texture, 0, col * avatar_dim, row * avatar_dim, 64, 64, GL_RGBA, GL_UNSIGNED_BYTE, steam_temp_avatar_data.ptr);
+                        if (i == steam_friend_count) break outer;
+                        i += 1;
+                    }
+                }
+            }
+        }
 
         string vsrc =
         "#version 450
 
         layout(location = 0) in vec3 a_position;
+        layout(location = 1) in uint i_texture_index;
+        layout(location = 2) in uint i_texture_offset;
 
         layout(location = 0) out vec2 f_texcoord;
+        layout(location = 1) out uint f_texture_index;
 
         vec2[] g_texcoords = vec2[](
-            vec2(0.0, 0.0),
-            vec2(1.0, 0.0),
-            vec2(1.0, 1.0),
-            vec2(0.0, 1.0)
+            vec2(0.0, 1.0 / " ~ avatar_per_dim.stringof ~ "),
+            vec2(1.0 / " ~ avatar_per_dim.stringof ~ ", 1.0 / " ~ avatar_per_dim.stringof ~ "),
+            vec2(1.0 / " ~ avatar_per_dim.stringof ~ ", 0.0),
+            vec2(0.0, 0.0)
         );
 
         void main() {
             gl_Position = vec4(a_position, 1.0);
-            f_texcoord = g_texcoords[gl_VertexID];
+
+            uint row = i_texture_offset / " ~ avatar_per_dim.stringof ~ ";
+            uint col = i_texture_offset % " ~ avatar_per_dim.stringof ~ ";
+            vec2 texcoord = g_texcoords[gl_VertexID];
+            texcoord.x += col / " ~ avatar_per_dim.stringof ~ ".0;
+            texcoord.y += row / " ~ avatar_per_dim.stringof ~ ".0;
+
+            f_texcoord = texcoord;
+            f_texture_index = i_texture_index;
         }
         ";
         uint vshader = glCreateShader(GL_VERTEX_SHADER);
@@ -486,13 +554,14 @@ struct OpenGLRenderer {
         "#version 450
 
         layout(location = 0) in vec2 f_texcoord;
+        layout(location = 1) flat in uint f_texture_index;
 
         layout(location = 0) out vec4 color;
 
         layout(location = 0) uniform sampler2D u_textures[32];
 
         void main() {
-            color = texture(u_textures[0], f_texcoord);
+            color = texture(u_textures[f_texture_index], f_texcoord);
         }
         ";
         uint fshader = glCreateShader(GL_FRAGMENT_SHADER);
@@ -510,7 +579,7 @@ struct OpenGLRenderer {
         glDeleteShader(fshader);
         glDeleteShader(vshader);
 
-        opengl_rect_mesh.shader = program;
+        rect_mesh.shader = program;
     }
 
     static void deinit() {
@@ -526,11 +595,14 @@ struct OpenGLRenderer {
         glClearColor(0.6, 0.2, 0.2, 1.0);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        OpenGLRectMesh.Instance[1] instances = [{}];
-        glNamedBufferData(opengl_rect_mesh.ibo, instances.sizeof, instances.ptr, GL_STREAM_DRAW);
+        steam_friend_index_selected = steam_friend_index_selected.min(steam_friend_count - 1).max(0);
+        OpenGLRectMesh.Instance[1] instances = [{
+            texture_offset: steam_friend_index_selected,
+        }];
+        glNamedBufferData(rect_mesh.ibo, instances.sizeof, instances.ptr, GL_STREAM_DRAW);
 
-        glUseProgram(opengl_rect_mesh.shader);
-        glBindVertexArray(opengl_rect_mesh.vao);
+        glUseProgram(rect_mesh.shader);
+        glBindVertexArray(rect_mesh.vao);
         glDrawElementsInstancedBaseVertexBaseInstance(GL_TRIANGLES,
             indices.length, gl_type!(OpenGLRectMesh.Element), cast(void*) 0,
             instances.length, 0, 0);
@@ -568,9 +640,10 @@ version (Windows) {
     __gshared ISteamUser steam_user = void;
     __gshared ISteamUtils steam_utils = void;
     __gshared ISteamFriends steam_friends = void;
-    __gshared ubyte[64 * 64 * 4] steam_avatar_data = void;
     __gshared ulong steam_id = void;
     __gshared const(char)* steam_name = void;
+    __gshared int steam_friend_count = 0;
+    __gshared int steam_friend_index_selected = 0;
 
     __gshared HINSTANCE platform_hinstance = void;
     __gshared HWND platform_hwnd = void;
@@ -625,9 +698,6 @@ version (Windows) {
 
             steam_id = steam_user.SteamAPI_ISteamUser_GetSteamID();
             steam_name = steam_friends.SteamAPI_ISteamFriends_GetPersonaName();
-
-            int avatar = steam_friends.SteamAPI_ISteamFriends_GetMediumFriendAvatar(steam_id);
-            steam_utils.SteamAPI_ISteamUtils_GetImageRGBA(avatar, steam_avatar_data.ptr, steam_avatar_data.sizeof);
         }
 
         platform_hinstance = GetModuleHandleW(null);
@@ -712,6 +782,12 @@ version (Windows) {
                             }
                         }
                         goto default;
+                    case WM_MOUSEWHEEL:
+                        short delta = cast(short) (wParam >> 16);
+                        short physical_delta = delta / WHEEL_DELTA;
+
+                        steam_friend_index_selected -= physical_delta;
+                        break;
                     case WM_QUIT:
                         break game_loop;
                     default:
