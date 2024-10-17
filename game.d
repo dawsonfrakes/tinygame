@@ -1,13 +1,12 @@
 version (D_BetterC) {} else pragma(msg, "warning: -betterC recommended");
 
-alias Alias(T) = T;
-alias Alias(alias a) = a;
 alias AliasSeq(T...) = T;
 template Procedure(RT, string name_, Args...) {
     alias ReturnType = RT;
     alias name = name_;
     alias ArgTypes = Args;
 }
+
 T min(T, U)(T x, U y) => x < y ? x : y;
 T max(T, U)(T x, U y) => x > y ? x : y;
 
@@ -426,18 +425,18 @@ struct OpenGLRenderer {
             uint texture_offset;
         }
 
+        static immutable Element[6] indices = [0, 1, 2, 2, 3, 0];
+        static immutable Vertex[4] vertices = [
+            {[-0.5, -0.5, 0.0]},
+            {[+0.5, -0.5, 0.0]},
+            {[+0.5, +0.5, 0.0]},
+            {[-0.5, +0.5, 0.0]},
+        ];
+
         uint vao;
         uint ibo;
         uint shader;
     }
-
-    static immutable OpenGLRectMesh.Element[6] indices = [0, 1, 2, 2, 3, 0];
-    static immutable OpenGLRectMesh.Vertex[4] vertices = [
-        {[-0.5, -0.5, 0.0]},
-        {[+0.5, -0.5, 0.0]},
-        {[+0.5, +0.5, 0.0]},
-        {[-0.5, +0.5, 0.0]},
-    ];
 
     __gshared OpenGLRectMesh rect_mesh = void;
 
@@ -450,10 +449,10 @@ struct OpenGLRenderer {
 
         uint ebo = void;
         glCreateBuffers(1, &ebo);
-        glNamedBufferData(ebo, indices.sizeof, indices.ptr, GL_STATIC_DRAW);
+        glNamedBufferData(ebo, rect_mesh.indices.sizeof, rect_mesh.indices.ptr, GL_STATIC_DRAW);
         uint vbo = void;
         glCreateBuffers(1, &vbo);
-        glNamedBufferData(vbo, vertices.sizeof, vertices.ptr, GL_STATIC_DRAW);
+        glNamedBufferData(vbo, rect_mesh.vertices.sizeof, rect_mesh.vertices.ptr, GL_STATIC_DRAW);
         uint ibo = void;
         glCreateBuffers(1, &ibo);
 
@@ -604,7 +603,7 @@ struct OpenGLRenderer {
         glUseProgram(rect_mesh.shader);
         glBindVertexArray(rect_mesh.vao);
         glDrawElementsInstancedBaseVertexBaseInstance(GL_TRIANGLES,
-            indices.length, gl_type!(OpenGLRectMesh.Element), cast(void*) 0,
+            rect_mesh.indices.length, gl_type!(OpenGLRectMesh.Element), cast(void*) 0,
             instances.length, 0, 0);
 
         platform_present();
