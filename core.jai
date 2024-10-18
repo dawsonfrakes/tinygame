@@ -30,6 +30,22 @@ ascii_to_utf16le_string_literal :: ($s: string) -> []u16 {
 	return utf16le;
 }
 
+make_procedures_dynamic :: ($T: Type) -> Type {
+    info := type_info(T);
+    for * info.members {
+        if it.type.type == .PROCEDURE {
+            proc := cast(*Type_Info_Procedure) it.type;
+            proc.procedure_flags &= ~.IS_ELSEWHERE;
+
+            new_info := type_info(#type *());
+            new_info.pointer_to = proc;
+            it.type = new_info;
+        }
+    }
+    return Compiler.get_type(info);
+}
+
 #scope_file
 
 BitOps :: #import "Bit_Operations";
+Compiler :: #import "Compiler";
