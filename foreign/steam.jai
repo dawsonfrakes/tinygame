@@ -1,6 +1,6 @@
 steamapi :: #library "../vendor/steam_api64";
 
-SteamAPI_Init_Result :: enum u32 {
+SteamAPI_Init_Result :: enum u32 #specified {
     OK :: 0;
     FAILED_GENERIC :: 1;
     NO_STEAM_CLIENT :: 2;
