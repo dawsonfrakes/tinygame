@@ -128,7 +128,7 @@ entry :: () {
     }
 }
 
-RawEntryPoint :: () #c_call #elsewhere {
+RawEntryPoint :: () #foreign {
     first_thread_context : type_of(context);
     push_context first_thread_context {
         entry();
