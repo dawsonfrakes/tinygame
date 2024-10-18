@@ -1,6 +1,23 @@
+#import "Bit_Operations";
+
+CPU_Endianness :: enum u32 {
+	LITTLE :: 0;
+	BIG :: 1;
+}
+
+ENDIAN :: #run ifx CPU == .X64 || CPU == .ARM64 CPU_Endianness.LITTLE else .BIG;
+
+native_to_little :: inline (x: $T) -> T {
+	return ifx ENDIAN == .LITTLE x else byte_swap(x);
+}
+
+native_to_big :: inline (x: $T) -> T {
+	return ifx ENDIAN == .BIG x else byte_swap(x);
+}
+
 ascii_to_utf16le_string_literal :: ($s: string) -> []u16 {
 	utf16le : [s.count + 1]u16;
-	for 0..s.count - 1 utf16le[it] = s[it];
+	for 0..s.count - 1 utf16le[it] = native_to_little(cast(u16) s[it]);
 	return utf16le;
 }
 
@@ -29,7 +46,22 @@ ascii_to_utf16le_string_literal :: ($s: string) -> []u16 {
 	PM_REMOVE :: 0x0001;
 	WM_CREATE :: 0x0001;
 	WM_DESTROY :: 0x0002;
+	WM_SIZE :: 0x0005;
+	WM_PAINT :: 0x000F;
 	WM_QUIT :: 0x0012;
+	WM_ERASEBKGND :: 0x0014;
+	WM_ACTIVATEAPP :: 0x001C;
+	WM_KEYDOWN :: 0x0100;
+	WM_KEYUP :: 0x0101;
+	WM_SYSKEYDOWN :: 0x0104;
+	WM_SYSKEYUP :: 0x0105;
+	WM_SYSCOMMAND :: 0x0112;
+	SC_KEYMENU :: 0xF100;
+	VK_RETURN :: 0x0D;
+	VK_ESCAPE :: 0x1B;
+	VK_F4 :: 0x73;
+	VK_F10 :: 0x79;
+	VK_F11 :: 0x7A;
 
 	HDC :: #type,distinct *void;
 	HWND :: #type,distinct *void;
@@ -81,9 +113,11 @@ ascii_to_utf16le_string_literal :: ($s: string) -> []u16 {
 	PeekMessageW :: (_: *MSG, _: HWND, _: u32, _: u32, _: u32) -> s32 #foreign user32;
 	TranslateMessage :: (_: *MSG) -> s32 #foreign user32;
 	DispatchMessageW :: (_: *MSG) -> s64 #foreign user32;
+	GetDC :: (_: HWND) -> HDC #foreign user32;
+	ValidateRect :: (_: HWND, _: *RECT) -> s32 #foreign user32;
 	DefWindowProcW :: (_: HWND, _: u32, _: u64, _: s64) -> s64 #foreign user32;
 	PostQuitMessage :: (_: s32) #foreign user32;
-	GetDC :: (_: HWND) -> HDC #foreign user32;
+	DestroyWindow :: (_: HWND) -> s32 #foreign user32;
 
 	dwmapi :: #system_library "dwmapi";
 
@@ -100,15 +134,43 @@ ascii_to_utf16le_string_literal :: ($s: string) -> []u16 {
 	timeBeginPeriod :: (_: u32) -> u32 #foreign winmm;
 }
 
+DEVELOPER :: true;
+
+platform_screen_width : u16 = ---;
+platform_screen_height : u16 = ---;
 #if OS == .WINDOWS {
 	platform_hinstance : HINSTANCE = ---;
 	platform_hwnd : HWND = ---;
 	platform_hdc : HDC = ---;
+}
 
-	#scope_file
+#scope_file
+
+#if OS == .WINDOWS {
+	toggle_fullscreen :: () {
+
+	}
+
+	update_cursor_clip :: () #no_context {
+
+	}
+
+	clear_held_keys :: () #no_context {
+
+	}
 
 	window_proc :: (hwnd: HWND, message: u32, wParam: u64, lParam: s64) -> s64 #c_call {
 		if message == {
+		case WM_PAINT;
+			ValidateRect(hwnd, null);
+		case WM_ERASEBKGND;
+			return 1;
+		case WM_ACTIVATEAPP;
+			if wParam != 0 update_cursor_clip();
+			else clear_held_keys();
+		case WM_SIZE;
+			platform_screen_width = cast,no_check(u16) cast,no_check(u64) lParam;
+			platform_screen_height = cast,no_check(u16) (cast,no_check(u64) lParam >> 16);
 		case WM_CREATE;
 			platform_hwnd = hwnd;
 			platform_hdc = GetDC(hwnd);
@@ -119,6 +181,9 @@ ascii_to_utf16le_string_literal :: ($s: string) -> []u16 {
 			DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, *round_mode, size_of(type_of(round_mode)));
 		case WM_DESTROY;
 			PostQuitMessage(0);
+		case WM_SYSCOMMAND;
+			if (wParam == SC_KEYMENU) return 0;
+			#through;
 		case;
 			return DefWindowProcW(hwnd, message, wParam, lParam);
 		}
@@ -151,6 +216,24 @@ ascii_to_utf16le_string_literal :: ($s: string) -> []u16 {
 				using msg;
 				TranslateMessage(*msg);
 				if message == {
+				case WM_KEYDOWN; #through;
+				case WM_KEYUP; #through;
+				case WM_SYSKEYDOWN; #through;
+				case WM_SYSKEYUP;
+					pressed := lParam & (1 << 31) == 0;
+					repeat  := pressed && lParam & (1 << 30) != 0;
+					sys     := message == WM_SYSKEYDOWN || message == WM_SYSKEYUP;
+					alt     := sys && lParam & (1 << 29) != 0;
+
+					if !repeat && (!sys || alt || wParam == VK_F10) {
+						if pressed {
+							if wParam == VK_F4 && alt DestroyWindow(platform_hwnd);
+							if wParam == VK_F11 || (wParam == VK_RETURN && alt) toggle_fullscreen();
+							if DEVELOPER && wParam == VK_ESCAPE DestroyWindow(platform_hwnd);
+						}
+					}
+
+					DispatchMessageW(*msg); // @hack steam overlay needs input.
 				case WM_QUIT;
 					break game_loop;
 				case;
