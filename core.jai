@@ -30,18 +30,25 @@ ascii_to_utf16le_string_literal :: ($s: string) -> []u16 {
 	return utf16le;
 }
 
+// @error this doesn't work on jai-1-089.
 make_procedures_dynamic :: ($T: Type) -> Type {
     info := type_info(T);
+	info.nontextual_flags &= ~.ALL_MEMBERS_UNINITIALIZED;
     for * info.members {
         if it.type.type == .PROCEDURE {
             proc := cast(*Type_Info_Procedure) it.type;
             proc.procedure_flags &= ~.IS_ELSEWHERE;
 
-            new_info := type_info(#type *());
-            new_info.pointer_to = proc;
+            new_info := type_info(*struct {});
+            new_info.pointer_to = it.type;
             it.type = new_info;
+
+			it.flags &= ~.CONSTANT;
+			it.offset_in_bytes = 0;
+			it.offset_into_constant_storage = -1;
         }
     }
+	Basic.print("%\n", info.*);
     return Compiler.get_type(info);
 }
 
