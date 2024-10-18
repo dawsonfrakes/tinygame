@@ -1,6 +1,7 @@
 #import "Basic";
 #import "Compiler";
-
+#import "File";
+#import "File_Utilities";
 
 build :: () {
 	options := get_build_options();
@@ -15,6 +16,9 @@ build :: () {
 	set_build_options(options, w);
 	set_build_options_dc(.{append_linker_arguments=.["-subsystem:windows", "-entry:RawEntryPoint"]}, w);
 	add_build_file("game.jai", w);
+
+	write_entire_file(".build/steam_appid.txt", "480");
+	copy_file("libs/steam_api64.dll", ".build/steam_api64.dll");
 }
 
 #run build();

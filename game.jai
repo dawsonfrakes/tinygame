@@ -25,6 +25,7 @@ ascii_to_utf16le_string_literal :: ($s: string) -> []u16 {
 	kernel32 :: #system_library "kernel32";
 
 	HINSTANCE :: #type,distinct *void;
+	PROC :: #type () -> s64 #c_call;
 
 	GetModuleHandleW :: (_: *u16) -> HINSTANCE #foreign kernel32;
 	Sleep :: (_: u32) #foreign kernel32;
@@ -119,6 +120,55 @@ ascii_to_utf16le_string_literal :: ($s: string) -> []u16 {
 	PostQuitMessage :: (_: s32) #foreign user32;
 	DestroyWindow :: (_: HWND) -> s32 #foreign user32;
 
+	gdi32 :: #system_library "gdi32";
+
+	PFD_DOUBLEBUFFER :: 0x00000001;
+	PFD_DRAW_TO_WINDOW :: 0x00000004;
+	PFD_SUPPORT_OPENGL :: 0x00000020;
+	PFD_DEPTH_DONTCARE :: 0x20000000;
+
+	PIXELFORMATDESCRIPTOR :: struct {
+		nSize : u16;
+		nVersion : u16;
+		dwFlags : u32;
+		iPixelType : u8;
+		cColorBits : u8;
+		cRedBits : u8;
+		cRedShift : u8;
+		cGreenBits : u8;
+		cGreenShift : u8;
+		cBlueBits : u8;
+		cBlueShift : u8;
+		cAlphaBits : u8;
+		cAlphaShift : u8;
+		cAccumBits : u8;
+		cAccumRedBits : u8;
+		cAccumGreenBits : u8;
+		cAccumBlueBits : u8;
+		cAccumAlphaBits : u8;
+		cDepthBits : u8;
+		cStencilBits : u8;
+		cAuxBuffers : u8;
+		iLayerType : u8;
+		bReserved : u8;
+		dwLayerMask : u32;
+		dwVisibleMask : u32;
+		dwDamageMask : u32;
+	}
+
+	ChoosePixelFormat :: (_: HDC, _: *PIXELFORMATDESCRIPTOR) -> s32 #foreign gdi32;
+	SetPixelFormat :: (_: HDC, _: s32, _: *PIXELFORMATDESCRIPTOR) -> s32 #foreign gdi32;
+	SwapBuffers :: (_: HDC) -> s32 #foreign gdi32;
+
+	opengl32 :: #system_library "opengl32";
+
+	HGLRC :: #type,distinct *void;
+
+	wglCreateContext :: (_: HDC) -> HGLRC #foreign opengl32;
+	wglDeleteContext :: (_: HGLRC) -> s32 #foreign opengl32;
+	wglMakeCurrent :: (_: HDC, _: HGLRC) -> s32 #foreign opengl32;
+	wglGetProcAddress :: (_: *u8) -> PROC #foreign opengl32;
+
 	dwmapi :: #system_library "dwmapi";
 
 	DWMWA_USE_IMMERSIVE_DARK_MODE :: 20;
@@ -134,10 +184,52 @@ ascii_to_utf16le_string_literal :: ($s: string) -> []u16 {
 	timeBeginPeriod :: (_: u32) -> u32 #foreign winmm;
 }
 
+#if STEAM {
+	steamapi :: #library "libs/steam_api64";
+
+	SteamAPI_Init_Result :: enum u32 {
+		OK :: 0;
+		FAILED_GENERIC :: 1;
+		NO_STEAM_CLIENT :: 2;
+		VERSION_MISMATCH :: 3;
+	}
+
+	SteamAPI_InitFlat :: (_: *[1024]u8) -> SteamAPI_Init_Result #foreign steamapi;
+	SteamAPI_RunCallbacks :: () #foreign steamapi;
+	SteamAPI_Shutdown :: () #foreign steamapi;
+}
+
+#if OPENGL {
+	gl10 :: struct {
+		GL_COLOR_BUFFER_BIT :: 0x00004000;
+
+		glEnable :: (_: u32) #foreign;
+		glDisable :: (_: u32) #foreign;
+		glViewport :: (_: s32, _: s32, _: u32, _: u32) #foreign;
+		glClearColor :: (_: float32, _: float32, _: float32, _: float32) #foreign;
+		glClear :: (_: u32) #foreign;
+	}
+
+	gl20 :: struct {
+		GL_LOWER_LEFT :: 0x8CA1;
+	}
+
+	gl45 :: struct {
+		GL_ZERO_TO_ONE :: 0x935F;
+
+		glClipControl :: (_: u32, _: u32) #foreign;
+	}
+}
+
 DEVELOPER :: true;
+OPENGL :: true;
+STEAM :: true;
 
 platform_screen_width : u16 = ---;
 platform_screen_height : u16 = ---;
+#if STEAM {
+	platform_steam_enabled := false;
+}
 #if OS == .WINDOWS {
 	platform_hinstance : HINSTANCE = ---;
 	platform_hwnd : HWND = ---;
@@ -179,6 +271,20 @@ platform_screen_height : u16 = ---;
 			DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, *dark_mode, size_of(type_of(dark_mode)));
 			round_mode : s32 = DWMWCP_DONOTROUND;
 			DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, *round_mode, size_of(type_of(round_mode)));
+
+			#if OPENGL {
+				pfd : PIXELFORMATDESCRIPTOR;
+				pfd.nSize = size_of(PIXELFORMATDESCRIPTOR);
+				pfd.nVersion = 1;
+				pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL |
+					PFD_DOUBLEBUFFER | PFD_DEPTH_DONTCARE;
+				pfd.cColorBits = 24;
+				format := ChoosePixelFormat(platform_hdc, *pfd);
+				SetPixelFormat(platform_hdc, format, *pfd);
+
+				temp_ctx := wglCreateContext(platform_hdc);
+				wglMakeCurrent(platform_hdc, temp_ctx);
+			}
 		case WM_DESTROY;
 			PostQuitMessage(0);
 		case WM_SYSCOMMAND;
@@ -194,6 +300,11 @@ platform_screen_height : u16 = ---;
 		platform_hinstance = GetModuleHandleW(null);
 
 		sleep_is_granular := timeBeginPeriod(1) == TIMERR_NOERROR;
+
+		#if STEAM {
+			platform_steam_enabled := SteamAPI_InitFlat(null) == .OK;
+			defer if platform_steam_enabled SteamAPI_Shutdown();
+		}
 
 		SetProcessDPIAware();
 		wndclass : WNDCLASSEXW;
@@ -239,6 +350,17 @@ platform_screen_height : u16 = ---;
 				case;
 					DispatchMessageW(*msg);
 				}
+			}
+
+			#if STEAM if platform_steam_enabled SteamAPI_RunCallbacks();
+
+			#if OPENGL {
+				using gl10;
+				using gl20;
+				// glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
+				glClearColor(0.6, 0.2, 0.2, 1.0);
+				glClear(GL_COLOR_BUFFER_BIT);
+				SwapBuffers(platform_hdc);
 			}
 
 			if sleep_is_granular {
