@@ -4,6 +4,8 @@ HINSTANCE :: #type,distinct *void;
 PROC :: #type () -> s64 #c_call;
 
 GetModuleHandleW :: (_: *u16) -> HINSTANCE #foreign kernel32;
+LoadLibraryW :: (_: *u16) -> HINSTANCE #foreign kernel32;
+GetProcAddress :: (_: HINSTANCE, _: *u8) -> PROC #foreign kernel32;
 Sleep :: (_: u32) #foreign kernel32;
 ExitProcess :: (_: u32) #foreign kernel32;
 

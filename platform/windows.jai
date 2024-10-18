@@ -43,6 +43,15 @@ window_proc :: (hwnd: HWND, message: u32, wParam: u64, lParam: s64) -> s64 #c_ca
 
             temp_ctx := wglCreateContext(platform_hdc);
             wglMakeCurrent(platform_hdc, temp_ctx);
+
+            dll := LoadLibraryW((#run ascii_to_utf16le_string_literal("opengl32")).data);
+            glEnable = xx GetProcAddress(dll, "glEnable");
+            glDisable = xx GetProcAddress(dll, "glDisable");
+            glViewport = xx GetProcAddress(dll, "glViewport");
+            glClearColor = xx GetProcAddress(dll, "glClearColor");
+            glClear = xx GetProcAddress(dll, "glClear");
+
+            glClipControl = xx wglGetProcAddress("glClipControl");
         }
     case WM_DESTROY;
         PostQuitMessage(0);
@@ -114,9 +123,7 @@ entry :: () {
         #if STEAM if platform_steam_enabled SteamAPI_RunCallbacks();
 
         #if OPENGL {
-            using gl10;
-            using gl20;
-            // glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
+            glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
             glClearColor(0.6, 0.2, 0.2, 1.0);
             glClear(GL_COLOR_BUFFER_BIT);
             SwapBuffers(platform_hdc);
