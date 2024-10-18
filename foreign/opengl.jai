@@ -12,8 +12,8 @@ gl20 :: struct {
     GL_LOWER_LEFT :: 0x8CA1;
 }
 
-gl45 :: struct {
+gl45 :: struct #type_info_procedures_are_void_pointers {
     GL_ZERO_TO_ONE :: 0x935F;
 
-    glClipControl :: (_: u32, _: u32) #foreign;
+    glClipControl : (_: u32, _: u32) #c_call;
 }
