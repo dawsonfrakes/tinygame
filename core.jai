@@ -48,7 +48,6 @@ make_procedures_dynamic :: ($T: Type) -> Type {
 			it.offset_into_constant_storage = -1;
         }
     }
-	Basic.print("%\n", info.*);
     return Compiler.get_type(info);
 }
 
