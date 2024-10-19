@@ -2,6 +2,7 @@ RectVertex :: struct {
     position : Vector3;
 }
 RectInstance :: struct {
+    transform : Matrix4;
     texture_index : u32;
 }
 
@@ -43,10 +44,17 @@ opengl_init :: () #no_context {
     glVertexArrayAttribBinding(vao, position_attrib, vbo_binding);
     glVertexArrayAttribFormat(vao, position_attrib, 3, GL_FLOAT, false, 0);
 
-    texture_index_attrib :: 1;
+    transform_attrib :: 1;
+    for 0..3 {
+        glEnableVertexArrayAttrib(vao, xx (transform_attrib + it));
+        glVertexArrayAttribBinding(vao, xx (transform_attrib + it), ibo_binding);
+        glVertexArrayAttribFormat(vao, xx (transform_attrib + it), 4, GL_FLOAT, false, xx ((#run get_field_offset(RectInstance, "transform")) + it * size_of(Vector4)));
+    }
+
+    texture_index_attrib :: 5;
     glEnableVertexArrayAttrib(vao, texture_index_attrib);
     glVertexArrayAttribBinding(vao, texture_index_attrib, ibo_binding);
-    glVertexArrayAttribIFormat(vao, texture_index_attrib, 1, GL_UNSIGNED_INT, 0);
+    glVertexArrayAttribIFormat(vao, texture_index_attrib, 1, GL_UNSIGNED_INT, (#run get_field_offset(RectInstance, "texture_index")));
 
     opengl_rect_vao = vao;
     opengl_rect_ibo = ibo;
@@ -55,13 +63,14 @@ opengl_init :: () #no_context {
 #version 450
 
 layout(location = 0) in vec3 a_position;
-layout(location = 1) in uint i_texture_index;
+layout(location = 1) in mat4 i_transform;
+layout(location = 5) in uint i_texture_index;
 
 layout(location = 0) out vec2 f_texcoord;
 layout(location = 1) out uint f_texture_index;
 
 float d = 1.0 / 8.0;
-vec2[] g_texcoords = vec2[](
+const vec2[] g_texcoords = vec2[](
     vec2(0.0, d),
     vec2(d, d),
     vec2(d, 0.0),
@@ -69,9 +78,7 @@ vec2[] g_texcoords = vec2[](
 );
 
 void main() {
-    float x = a_position.x / 1920.0;
-    float y = a_position.y / 1080.0;
-    gl_Position = vec4(x, y, a_position.z, 1.0);
+    gl_Position = i_transform * vec4(a_position, 1.0);
     uint row = i_texture_index / 8;
     uint col = i_texture_index % 8;
     f_texcoord = g_texcoords[gl_VertexID] + vec2(d * float(col), d * float(row));
@@ -119,7 +126,7 @@ DONE
     glCreateTextures(GL_TEXTURE_2D, opengl_rect_textures.count, opengl_rect_textures.data);
     for opengl_rect_textures {
         glTextureStorage2D(it, 1, GL_RGB8, 512, 512);
-        glTextureParameteri(it, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTextureParameteri(it, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTextureParameteri(it, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTextureParameteri(it, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTextureParameteri(it, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -171,17 +178,47 @@ opengl_present :: () #no_context {
     glClearNamedFramebufferfv(opengl_main_fbo, GL_COLOR, 0, color0.data);
     glViewport(0, 0, platform_screen_width, platform_screen_height);
 
+    x_scale := 1.0 / max(1.0, cast(float32) platform_screen_width);
+    y_scale := 1.0 / max(1.0, cast(float32) platform_screen_height);
+
     steam_selected_friend_index = clamp(steam_selected_friend_index, 0, steam_friend_count - 1);
-    instances := RectInstance.[
-        .{xx steam_selected_friend_index},
-    ];
-    glNamedBufferData(opengl_rect_ibo, size_of(type_of(instances)), instances.data, GL_STREAM_DRAW);
+    INSTANCES_MAX :: 128;
+    instances_data : [INSTANCES_MAX] RectInstance = ---;
+
+    instances : [] RectInstance = instances_data;
+    instances.count = steam_friend_count;
+    y := -cast(s32) platform_screen_height / 1.0 + 64.0 + 150.0;
+    index := 0;
+    for row: 0..7 {
+        x := -cast(s32) platform_screen_width / 1.0 + 64.0 + 150.0;
+        for col: 0..12 {
+            if index >= instances.count break row;
+            instances[index] = .{
+                transform=Matrix4.{.[
+                    x_scale, 0.0, 0.0, 0.0,
+                    0.0, y_scale, 0.0, 0.0,
+                    0.0, 0.0, 1.0, 0.0,
+                    0.0, 0.0, 0.0, 1.0,
+                ]} * Matrix4.{.[
+                    1.0, 0.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0, 0.0,
+                    0.0, 0.0, 1.0, 0.0,
+                    x, y, 0.0, 1.0,
+                ]},
+                texture_index = xx index,
+            };
+            x += 128.0 + 50.0;
+            index += 1;
+        }
+        y += 128.0 + 50.0;
+    }
+    glNamedBufferData(opengl_rect_ibo, xx (size_of(RectInstance) * instances.count), instances.data, GL_STREAM_DRAW);
 
     glUseProgram(opengl_rect_shader);
     glBindVertexArray(opengl_rect_vao);
     glDrawElementsInstancedBaseVertexBaseInstance(GL_TRIANGLES,
         rect_indices.count, GL_UNSIGNED_BYTE, cast(*void) 0,
-        instances.count, 0, 0);
+        xx instances.count, 0, 0);
 
     // @note(dfra): fixes intel default framebuffer resize bug
     glBindFramebuffer(GL_FRAMEBUFFER, 0);

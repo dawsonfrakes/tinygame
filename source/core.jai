@@ -1,5 +1,15 @@
 Vector2 :: struct { x, y: float32; }
 Vector3 :: struct { x, y, z: float32; }
+Vector4 :: struct { x, y, z, w: float32; }
+Matrix4 :: struct { #as members : [16] float32; }
+
+operator * :: (a: Matrix4, b: Matrix4) -> Matrix4 #no_context {
+    result : Matrix4;
+    for i: 0..3 for j: 0..3 for k: 0..3
+        result.members[i * 4 + j] +=
+            b.members[i * 4 + k] * a.members[k * 4 + j];
+    return result;
+}
 
 CPU_Endianness :: enum u32 {
 	UNKNOWN :: 0;
