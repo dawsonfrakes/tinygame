@@ -21,7 +21,7 @@ build :: () {
 	set_build_options_dc(.{append_linker_arguments=.["-subsystem:windows", "-entry:RawEntryPoint"]}, w);
 
 	compiler_begin_intercept(w);
-	add_build_file("platform.jai", w);
+	add_build_file("source/platform.jai", w);
 
 	while true {
         message := compiler_wait_for_message();
@@ -39,7 +39,7 @@ build :: () {
     }
 
 	write_entire_file(".build/steam_appid.txt", "480");
-	copy_file("vendor/steam_api64.dll", ".build/steam_api64.dll");
+	copy_file("stupid_windows_garbage/steam_api64.dll", ".build/steam_api64.dll");
 }
 
 #run,stallable build();

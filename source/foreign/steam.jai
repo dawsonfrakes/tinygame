@@ -1,4 +1,4 @@
-steamapi :: #library "../vendor/steam_api64";
+steamapi :: #library "../../stupid_windows_garbage/steam_api64";
 
 ISteamUser :: #type,distinct *void;
 ISteamUtils :: #type,distinct *void;
