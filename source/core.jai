@@ -1,3 +1,6 @@
+Vector2 :: struct { x, y: float32; }
+Vector3 :: struct { x, y, z: float32; }
+
 CPU_Endianness :: enum u32 {
 	UNKNOWN :: 0;
 	LITTLE :: 1;
