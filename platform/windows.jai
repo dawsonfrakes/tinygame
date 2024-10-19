@@ -395,7 +395,8 @@ entry :: () {
     }
 }
 
-RawEntryPoint :: () #foreign {
+#program_export
+RawEntryPoint :: () #c_call {
     first_thread_context : type_of(context);
     push_context first_thread_context {
         entry();
