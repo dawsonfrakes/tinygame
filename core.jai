@@ -30,6 +30,18 @@ ascii_to_utf16le_string_literal :: ($s: string) -> []u16 {
 	return utf16le;
 }
 
+min :: inline (x: $T, y: T) -> T #no_context {
+	return ifx x < y then x else y;
+}
+
+max :: inline (x: $T, y: T) -> T #no_context {
+	return ifx x > y then x else y;
+}
+
+clamp :: inline (x: $T, low: T, high: T) -> T #no_context {
+    return max(low, min(x, high));
+}
+
 #scope_file
 
 BitOps :: #import "Bit_Operations";
