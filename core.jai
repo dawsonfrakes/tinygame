@@ -42,7 +42,31 @@ clamp :: inline (x: $T, low: T, high: T) -> T #no_context {
     return max(low, min(x, high));
 }
 
+get_field_offset :: ($T: Type, name: string) -> s64 {
+    info := type_info(T);
+    for info.members {
+        if it.name == name return it.offset_in_bytes;
+    }
+    return -1;
+}
+
+get_field_type :: ($T: Type, name: string) -> Type {
+    info := type_info(T);
+    for info.members {
+        if it.name == name return Compiler.get_type(it.type);
+    }
+    return Type;
+}
+
+set_field :: inline (x: *$T, $name: string, value: $R) {
+    #assert R == #run get_field_type(T, name);
+    y :: #run get_field_offset(T, name);
+    #assert y != -1;
+    #insert #run Basic.tprint("<< (cast(*type_of(T.%)) (cast(*u8) x + y)) = value;", name);
+}
+
 #scope_file
 
+Basic :: #import "Basic";
 BitOps :: #import "Bit_Operations";
 Compiler :: #import "Compiler";
