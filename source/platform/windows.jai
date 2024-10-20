@@ -186,6 +186,8 @@ entry :: () {
 
         #if STEAM if platform_steam_enabled SteamAPI_RunCallbacks();
 
+        game_update();
+
         #if OPENGL {
             opengl_present();
             SwapBuffers(platform_hdc);

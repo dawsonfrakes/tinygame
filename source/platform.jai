@@ -42,3 +42,5 @@ platform_screen_height : u16 = ---;
 #if OS == .WINDOWS #load "platform/windows.jai";
 else #assert false "this os is not currently supported";
 #if OPENGL #load "platform/opengl.jai";
+
+#load "game.jai";

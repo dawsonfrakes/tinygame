@@ -1,21 +1,22 @@
-RectVertex :: struct {
-    position : Vector3;
-}
 RectInstance :: struct {
     transform : Matrix4;
-    texture_index : u32;
+    texture_index : s32;
 }
 
-rect_size :: 64.0;
-rect_vertices :: RectVertex.[
-    .{.{-rect_size, -rect_size, 0.0}},
-    .{.{+rect_size, -rect_size, 0.0}},
-    .{.{+rect_size, +rect_size, 0.0}},
-    .{.{-rect_size, +rect_size, 0.0}},
-];
-rect_indices :: u8.[0, 1, 2, 2, 3, 0];
+AVATAR_INSTANCES_MAX :: 64 * 32;
+avatar_instances_data : [AVATAR_INSTANCES_MAX] RectInstance = ---;
+avatar_instances : [] RectInstance;
+avatar_to_rect_instance :: (avatar: *Avatar) #no_context {
+    if avatar_instances.count >= AVATAR_INSTANCES_MAX return;
+    avatar_instances.count += 1;
+    instance := *avatar_instances[avatar_instances.count - 1];
+    instance.transform = avatar_to_world_matrix(avatar);
+    instance.texture_index = avatar.friend_index;
+}
 
 opengl_init :: () #no_context {
+    avatar_instances.data = avatar_instances_data.data;
+
     glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
 
     glCreateFramebuffers(1, *opengl_main_fbo);
@@ -23,10 +24,10 @@ opengl_init :: () #no_context {
 
     vbo : u32 = ---;
     glCreateBuffers(1, *vbo);
-    glNamedBufferData(vbo, size_of(type_of(rect_vertices)), rect_vertices.data, GL_STATIC_DRAW);
+    glNamedBufferData(vbo, size_of(type_of(avatar_vertices)), avatar_vertices.data, GL_STATIC_DRAW);
     ebo : u32 = ---;
     glCreateBuffers(1, *ebo);
-    glNamedBufferData(ebo, size_of(type_of(rect_indices)), rect_indices.data, GL_STATIC_DRAW);
+    glNamedBufferData(ebo, size_of(type_of(avatar_indices)), avatar_indices.data, GL_STATIC_DRAW);
     ibo : u32 = ---;
     glCreateBuffers(1, *ibo);
 
@@ -178,47 +179,17 @@ opengl_present :: () #no_context {
     glClearNamedFramebufferfv(opengl_main_fbo, GL_COLOR, 0, color0.data);
     glViewport(0, 0, platform_screen_width, platform_screen_height);
 
-    x_scale := 1.0 / max(1.0, cast(float32) platform_screen_width);
-    y_scale := 1.0 / max(1.0, cast(float32) platform_screen_height);
-
     steam_selected_friend_index = clamp(steam_selected_friend_index, 0, steam_friend_count - 1);
-    INSTANCES_MAX :: 128;
-    instances_data : [INSTANCES_MAX] RectInstance = ---;
 
-    instances : [] RectInstance = instances_data;
-    instances.count = steam_friend_count;
-    y := -cast(s32) platform_screen_height / 1.0 + 64.0 + 150.0;
-    index := 0;
-    for row: 0..7 {
-        x := -cast(s32) platform_screen_width / 1.0 + 64.0 + 150.0;
-        for col: 0..12 {
-            if index >= instances.count break row;
-            instances[index] = .{
-                transform=Matrix4.{.[
-                    x_scale, 0.0, 0.0, 0.0,
-                    0.0, y_scale, 0.0, 0.0,
-                    0.0, 0.0, 1.0, 0.0,
-                    0.0, 0.0, 0.0, 1.0,
-                ]} * Matrix4.{.[
-                    1.0, 0.0, 0.0, 0.0,
-                    0.0, 1.0, 0.0, 0.0,
-                    0.0, 0.0, 1.0, 0.0,
-                    x, y, 0.0, 1.0,
-                ]},
-                texture_index = xx index,
-            };
-            x += 128.0 + 50.0;
-            index += 1;
-        }
-        y += 128.0 + 50.0;
-    }
-    glNamedBufferData(opengl_rect_ibo, xx (size_of(RectInstance) * instances.count), instances.data, GL_STREAM_DRAW);
+    avatar_instances.count = 0;
+    for * avatars avatar_to_rect_instance(it);
+    glNamedBufferData(opengl_rect_ibo, xx (size_of(RectInstance) * avatar_instances.count), avatar_instances.data, GL_STREAM_DRAW);
 
     glUseProgram(opengl_rect_shader);
     glBindVertexArray(opengl_rect_vao);
     glDrawElementsInstancedBaseVertexBaseInstance(GL_TRIANGLES,
-        rect_indices.count, GL_UNSIGNED_BYTE, cast(*void) 0,
-        xx instances.count, 0, 0);
+        avatar_indices.count, GL_UNSIGNED_BYTE, cast(*void) 0,
+        xx avatar_instances.count, 0, 0);
 
     // @note(dfra): fixes intel default framebuffer resize bug
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
