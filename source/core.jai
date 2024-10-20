@@ -51,6 +51,10 @@ max :: inline (x: $T, y: T) -> T #no_context {
 	return ifx x > y then x else y;
 }
 
+abs :: inline (x: $T) -> T #no_context {
+	return ifx x >= 0 then x else -x;
+}
+
 clamp :: inline (x: $T, low: T, high: T) -> T #no_context {
     return max(low, min(x, high));
 }

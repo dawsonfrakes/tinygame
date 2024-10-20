@@ -17,19 +17,22 @@ Avatar :: struct {
     scale : Vector2;
     rotation : float32;
     friend_index : s32;
+    is_alive := true;
 }
 
 AVATARS_MAX :: 64 * 32;
 avatars_data : [AVATARS_MAX] Avatar = ---;
+dead_avatars_data : [AVATARS_MAX] s64 = ---;
 avatars : [] Avatar;
+dead_avatars : [] s64;
 
 init_avatars :: () {
     avatars.data = avatars_data.data;
-    avatars.count = steam_friend_count;
-    y := -cast(s32) platform_screen_height / 1.0 + 64.0 + 150.0;
+    avatars.count = #ifx STEAM steam_friend_count else 0;
+    y := avatar_half_dim;
     index := 0;
     for row: 0..7 {
-        x := -cast(s32) platform_screen_width / 1.0 + 64.0 + 150.0;
+        x := avatar_half_dim;
         for col: 0..12 {
             if index >= avatars.count break row;
             avatars[index] = .{
@@ -37,32 +40,32 @@ init_avatars :: () {
                 scale=.{1.0, 1.0},
                 friend_index = xx index,
             };
-            x += 128.0 + 50.0;
+            x += avatar_half_dim + 64.0;
             index += 1;
         }
-        y += 128.0 + 50.0;
+        y += avatar_half_dim + 64.0;
     }
 }
 
 avatar_to_world_matrix :: (using avatar: *Avatar) -> Matrix4 #no_context {
-    x_scale_view := 1.0 / max(1.0, cast(float32) platform_screen_width);
-    y_scale_view := 1.0 / max(1.0, cast(float32) platform_screen_height);
+    x_scale_view := 1.0 / max(1.0, platform_screen_width / 2.0);
+    y_scale_view := 1.0 / max(1.0, platform_screen_height / 2.0);
 
     result := Matrix4.{.[
         x_scale_view, 0.0, 0.0, 0.0,
         0.0, y_scale_view, 0.0, 0.0,
         0.0, 0.0, 1.0, 0.0,
-        0.0, 0.0, 0.0, 1.0,
-    ]} * Matrix4.{.[
-        scale.x, 0.0, 0.0, 0.0,
-        0.0, scale.y, 0.0, 0.0,
-        0.0, 0.0, 1.0, 0.0,
-        0.0, 0.0, 0.0, 1.0,
+        -1.0, -1.0, 0.0, 1.0,
     ]} * Matrix4.{.[
         1.0, 0.0, 0.0, 0.0,
         0.0, 1.0, 0.0, 0.0,
         0.0, 0.0, 1.0, 0.0,
         position.x, position.y, 0.0, 1.0,
+    ]} * Matrix4.{.[
+        scale.x / 2.0, 0.0, 0.0, 0.0,
+        0.0, scale.y / 2.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0,
     ]};
     return result;
 }
@@ -74,18 +77,63 @@ game_update :: () {
         game_initted = true;
         init_avatars();
 
+        dead_avatars.data = dead_avatars_data.data;
+
         for * avatars
             it.velocity = .{
-                random_get_zero_to_one() * 9.0,
-                random_get_zero_to_one() * 9.0,
+                random_get_zero_to_one() * 29.0,
+                random_get_zero_to_one() * 29.0,
             };
     }
 
+    dead_avatars.count = 0;
+
     for * avatars {
-        it.velocity.x = max(0.0, it.velocity.x * 0.95);
-        it.velocity.y = max(0.0, it.velocity.y * 0.95);
+        if !it.is_alive continue;
+        it.velocity.x = it.velocity.x * 0.99;
+        it.velocity.y = it.velocity.y * 0.99;
         it.position.x += it.velocity.x;
         it.position.y += it.velocity.y;
+
+        if it.position.x < avatar_half_dim {
+            it.position.x = avatar_half_dim;
+            it.velocity.x = -it.velocity.x;
+        }
+
+        if it.position.y < avatar_half_dim {
+            it.position.y = avatar_half_dim;
+            it.velocity.y = -it.velocity.y;
+        }
+
+        if it.position.x > cast(float) (platform_screen_width-1-avatar_half_dim) {
+            it.position.x = cast(float) (platform_screen_width-1-avatar_half_dim);
+            it.velocity.x = -it.velocity.x;
+        }
+
+        if it.position.y > cast(float) (platform_screen_height-1-avatar_half_dim) {
+            it.position.y = cast(float) (platform_screen_height-1-avatar_half_dim);
+            it.velocity.y = -it.velocity.y;
+        }
+
+        overlapping :: (a: Avatar, b: Avatar) -> bool {
+            return abs(a.position.x - b.position.x) < avatar_half_dim && abs(a.position.y - b.position.y) < avatar_half_dim;
+        }
+
+        for other_index : it_index+1..avatars.count-1 {
+            other := avatars[other_index];
+            if !other.is_alive continue;
+            if overlapping(it, other) {
+                dead_avatars_data[dead_avatars.count] = it_index;
+                dead_avatars.count += 1;
+                dead_avatars_data[dead_avatars.count] = other_index;
+                dead_avatars.count += 1;
+                break;
+            }
+        }
+    }
+
+    for dead_avatars {
+        avatars[it].is_alive = false;
     }
 }
 

@@ -135,7 +135,6 @@ DONE
     }
 
     #if STEAM if platform_steam_enabled {
-        steam_friend_count = xx SteamAPI_ISteamFriends_GetFriendCount(steam_friends, .ALL);
         if steam_friend_count > 0 {
             i : s32 = 0;
             for texture: 0..opengl_rect_textures.count-1 {
@@ -178,8 +177,6 @@ opengl_present :: () #no_context {
     color0 := float32.[0.6, 0.2, 0.2, 1.0];
     glClearNamedFramebufferfv(opengl_main_fbo, GL_COLOR, 0, color0.data);
     glViewport(0, 0, platform_screen_width, platform_screen_height);
-
-    steam_selected_friend_index = clamp(steam_selected_friend_index, 0, steam_friend_count - 1);
 
     avatar_instances.count = 0;
     for * avatars avatar_to_rect_instance(it);

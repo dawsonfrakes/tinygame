@@ -1,9 +1,7 @@
-steamapi :: #library "../../stupid_windows_garbage/steam_api64";
-
 ISteamUser :: #type,distinct *void;
 ISteamUtils :: #type,distinct *void;
 ISteamFriends :: #type,distinct *void;
-SteamAPI_Init_Result :: enum u32 #specified {
+SteamAPI_Init_Result :: enum s32 #specified {
     OK :: 0;
     FAILED_GENERIC :: 1;
     NO_STEAM_CLIENT :: 2;
@@ -24,16 +22,16 @@ SteamAPI_Friend_Flags :: enum_flags s32 {
     ALL :: 0xFFFF;
 }
 
-SteamAPI_InitFlat :: (_: *[1024]u8) -> SteamAPI_Init_Result #foreign steamapi;
-SteamAPI_RunCallbacks :: () #foreign steamapi;
-SteamAPI_Shutdown :: () #foreign steamapi;
-SteamAPI_SteamFriends_v017 :: () -> ISteamFriends #foreign steamapi;
-SteamAPI_ISteamFriends_GetPersonaName :: (_: ISteamFriends) -> *u8 #foreign steamapi;
-SteamAPI_ISteamFriends_GetFriendCount :: (_: ISteamFriends, _: SteamAPI_Friend_Flags) -> s32 #foreign steamapi;
-SteamAPI_ISteamFriends_GetFriendByIndex :: (_: ISteamFriends, _: s32, _: SteamAPI_Friend_Flags) -> u64 #foreign steamapi;
-SteamAPI_ISteamFriends_GetFriendPersonaName :: (_: ISteamFriends, _: u64) -> *u8 #foreign steamapi;
-SteamAPI_ISteamFriends_GetMediumFriendAvatar :: (_: ISteamFriends, _: u64) -> s32 #foreign steamapi;
-SteamAPI_SteamUtils_v010 :: () -> ISteamUtils #foreign steamapi;
-SteamAPI_ISteamUtils_GetImageRGBA :: (_: ISteamUtils, _: s32, _: *u8, _: s32) -> bool #foreign steamapi;
-SteamAPI_SteamUser_v023 :: () -> ISteamUser #foreign steamapi;
-SteamAPI_ISteamUser_GetSteamID :: (_: ISteamUser) -> u64 #foreign steamapi;
+SteamAPI_InitFlat : (_: *[1024]u8) -> SteamAPI_Init_Result #c_call;
+SteamAPI_RunCallbacks : () #c_call;
+SteamAPI_Shutdown : () #c_call;
+SteamAPI_SteamFriends_v017 : () -> ISteamFriends #c_call;
+SteamAPI_ISteamFriends_GetPersonaName : (_: ISteamFriends) -> *u8 #c_call;
+SteamAPI_ISteamFriends_GetFriendCount : (_: ISteamFriends, _: SteamAPI_Friend_Flags) -> s32 #c_call;
+SteamAPI_ISteamFriends_GetFriendByIndex : (_: ISteamFriends, _: s32, _: SteamAPI_Friend_Flags) -> u64 #c_call;
+SteamAPI_ISteamFriends_GetFriendPersonaName : (_: ISteamFriends, _: u64) -> *u8 #c_call;
+SteamAPI_ISteamFriends_GetMediumFriendAvatar : (_: ISteamFriends, _: u64) -> s32 #c_call;
+SteamAPI_SteamUtils_v010 : () -> ISteamUtils #c_call;
+SteamAPI_ISteamUtils_GetImageRGBA : (_: ISteamUtils, _: s32, _: *u8, _: s32) -> bool #c_call;
+SteamAPI_SteamUser_v023 : () -> ISteamUser #c_call;
+SteamAPI_ISteamUser_GetSteamID : (_: ISteamUser) -> u64 #c_call;

@@ -128,11 +128,32 @@ entry :: () {
     sleep_is_granular := timeBeginPeriod(1) == TIMERR_NOERROR;
 
     #if STEAM {
-        platform_steam_enabled = SteamAPI_InitFlat(null) == .OK;
+        dll := LoadLibraryW((#run ascii_to_utf16le_string_literal("steam_api64")).data);
+        if dll {
+            SteamAPI_InitFlat = xx GetProcAddress(dll, "SteamAPI_InitFlat");
+            SteamAPI_RunCallbacks = xx GetProcAddress(dll, "SteamAPI_RunCallbacks");
+            SteamAPI_Shutdown = xx GetProcAddress(dll, "SteamAPI_Shutdown");
+            SteamAPI_SteamFriends_v017 = xx GetProcAddress(dll, "SteamAPI_SteamFriends_v017");
+            SteamAPI_ISteamFriends_GetPersonaName = xx GetProcAddress(dll, "SteamAPI_ISteamFriends_GetPersonaName");
+            SteamAPI_ISteamFriends_GetFriendCount = xx GetProcAddress(dll, "SteamAPI_ISteamFriends_GetFriendCount");
+            SteamAPI_ISteamFriends_GetFriendByIndex = xx GetProcAddress(dll, "SteamAPI_ISteamFriends_GetFriendByIndex");
+            SteamAPI_ISteamFriends_GetFriendPersonaName = xx GetProcAddress(dll, "SteamAPI_ISteamFriends_GetFriendPersonaName");
+            SteamAPI_ISteamFriends_GetMediumFriendAvatar = xx GetProcAddress(dll, "SteamAPI_ISteamFriends_GetMediumFriendAvatar");
+            SteamAPI_SteamUtils_v010 = xx GetProcAddress(dll, "SteamAPI_SteamUtils_v010");
+            SteamAPI_ISteamUtils_GetImageRGBA = xx GetProcAddress(dll, "SteamAPI_ISteamUtils_GetImageRGBA");
+            SteamAPI_SteamUser_v023 = xx GetProcAddress(dll, "SteamAPI_SteamUser_v023");
+            SteamAPI_ISteamUser_GetSteamID = xx GetProcAddress(dll, "SteamAPI_ISteamUser_GetSteamID");
+        }
+
+        platform_steam_enabled = SteamAPI_InitFlat && SteamAPI_InitFlat(null) == .OK;
+        if platform_steam_enabled {
+            steam_user = SteamAPI_SteamUser_v023();
+            steam_utils = SteamAPI_SteamUtils_v010();
+            steam_friends = SteamAPI_SteamFriends_v017();
+
+            steam_friend_count = xx SteamAPI_ISteamFriends_GetFriendCount(steam_friends, .ALL);
+        }
         defer if platform_steam_enabled SteamAPI_Shutdown();
-        steam_user = SteamAPI_SteamUser_v023();
-        steam_utils = SteamAPI_SteamUtils_v010();
-        steam_friends = SteamAPI_SteamFriends_v017();
     }
 
     SetProcessDPIAware();
@@ -176,7 +197,6 @@ entry :: () {
                 DispatchMessageW(*msg); // @hack steam overlay needs input.
             case WM_MOUSEWHEEL;
                 delta := cast,no_check(s16) (wParam >> 16) / WHEEL_DELTA;
-                steam_selected_friend_index -= delta;
             case WM_QUIT;
                 break game_loop;
             case;

@@ -9,9 +9,7 @@ platform_screen_height : u16 = ---;
 	steam_user : ISteamUser = ---;
 	steam_utils : ISteamUtils = ---;
 	steam_friends : ISteamFriends = ---;
-
-	steam_friend_count : s16 = 0;
-	steam_selected_friend_index : s16 = 0;
+	steam_friend_count : s16 = ---;
 }
 #if OS == .WINDOWS {
 	platform_hinstance : HINSTANCE = ---;
