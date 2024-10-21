@@ -27,7 +27,7 @@ dead_avatars_data : [AVATARS_MAX] s64 = ---;
 avatars : [] Avatar;
 dead_avatars : [] s64;
 
-init_avatars :: () {
+_init_avatars :: (do_reset_of_dead_only: bool) {
     avatars.data = avatars_data.data;
     avatars.count = #ifx STEAM steam_friend_count else 0;
     y := avatar_half_dim;
@@ -36,21 +36,25 @@ init_avatars :: () {
         x := avatar_half_dim;
         for col: 0..12 {
             if index >= avatars.count break row;
-            avatars[index] = .{
-                position=.{x, y},
-                scale=.{1.0, 1.0},
-                friend_index = xx index,
-                velocity = .{
-                    (random_get_zero_to_one() * 2.0 - 1.0) * AVATARS_MAX_INIT_VELOCITY_MULTIPLIER,
-                    (random_get_zero_to_one() * 2.0 - 1.0) * AVATARS_MAX_INIT_VELOCITY_MULTIPLIER,
-                },
-            };
+            if !do_reset_of_dead_only || avatars[index].is_alive
+                avatars[index] = .{
+                    position=.{x, y},
+                    scale=.{1.0, 1.0},
+                    friend_index = xx index,
+                    velocity = .{
+                        (random_get_zero_to_one() * 2.0 - 1.0) * AVATARS_MAX_INIT_VELOCITY_MULTIPLIER,
+                        (random_get_zero_to_one() * 2.0 - 1.0) * AVATARS_MAX_INIT_VELOCITY_MULTIPLIER,
+                    },
+                };
             x += avatar_half_dim + 64.0;
             index += 1;
         }
         y += avatar_half_dim + 64.0;
     }
 }
+
+init_avatars :: #bake_arguments _init_avatars(do_reset_of_dead_only=false);
+restart_avatars_that_are_still_alive :: #bake_arguments _init_avatars(do_reset_of_dead_only=true);
 
 avatar_to_world_matrix :: (using avatar: *Avatar) -> Matrix4 #no_context {
     x_scale_view := 1.0 / max(1.0, platform_screen_width / 2.0);
@@ -91,7 +95,7 @@ game_update :: () {
 
     if game_do_reset {
         game_do_reset = false;
-        init_avatars();
+        restart_avatars_that_are_still_alive();
     }
 
     for * avatars {
