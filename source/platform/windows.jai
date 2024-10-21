@@ -191,6 +191,7 @@ entry :: () {
                         if wParam == VK_F4 && alt DestroyWindow(platform_hwnd);
                         if wParam == VK_F11 || (wParam == VK_RETURN && alt) toggle_fullscreen();
                         if DEVELOPER && wParam == VK_ESCAPE DestroyWindow(platform_hwnd);
+                        if wParam == #char "R" game_do_reset = true;
                     }
                 }
 

@@ -8,6 +8,8 @@ avatar_instances_data : [AVATAR_INSTANCES_MAX] RectInstance = ---;
 avatar_instances : [] RectInstance;
 avatar_to_rect_instance :: (avatar: *Avatar) #no_context {
     if avatar_instances.count >= AVATAR_INSTANCES_MAX return;
+    if !avatar.is_alive return;
+
     avatar_instances.count += 1;
     instance := *avatar_instances[avatar_instances.count - 1];
     instance.transform = avatar_to_world_matrix(avatar);

@@ -21,6 +21,7 @@ Avatar :: struct {
 }
 
 AVATARS_MAX :: 64 * 32;
+AVATARS_MAX_INIT_VELOCITY_MULTIPLIER :: 29.0;
 avatars_data : [AVATARS_MAX] Avatar = ---;
 dead_avatars_data : [AVATARS_MAX] s64 = ---;
 avatars : [] Avatar;
@@ -39,6 +40,10 @@ init_avatars :: () {
                 position=.{x, y},
                 scale=.{1.0, 1.0},
                 friend_index = xx index,
+                velocity = .{
+                    (random_get_zero_to_one() * 2.0 - 1.0) * AVATARS_MAX_INIT_VELOCITY_MULTIPLIER,
+                    (random_get_zero_to_one() * 2.0 - 1.0) * AVATARS_MAX_INIT_VELOCITY_MULTIPLIER,
+                },
             };
             x += avatar_half_dim + 64.0;
             index += 1;
@@ -62,8 +67,8 @@ avatar_to_world_matrix :: (using avatar: *Avatar) -> Matrix4 #no_context {
         0.0, 0.0, 1.0, 0.0,
         position.x, position.y, 0.0, 1.0,
     ]} * Matrix4.{.[
-        scale.x / 2.0, 0.0, 0.0, 0.0,
-        0.0, scale.y / 2.0, 0.0, 0.0,
+        scale.x, 0.0, 0.0, 0.0,
+        0.0, scale.y, 0.0, 0.0,
         0.0, 0.0, 1.0, 0.0,
         0.0, 0.0, 0.0, 1.0,
     ]};
@@ -72,21 +77,22 @@ avatar_to_world_matrix :: (using avatar: *Avatar) -> Matrix4 #no_context {
 
 game_initted := false;
 
+game_do_reset := false;
+
 game_update :: () {
     if !game_initted {
         game_initted = true;
         init_avatars();
 
         dead_avatars.data = dead_avatars_data.data;
-
-        for * avatars
-            it.velocity = .{
-                random_get_zero_to_one() * 29.0,
-                random_get_zero_to_one() * 29.0,
-            };
     }
 
     dead_avatars.count = 0;
+
+    if game_do_reset {
+        game_do_reset = false;
+        init_avatars();
+    }
 
     for * avatars {
         if !it.is_alive continue;
@@ -116,7 +122,8 @@ game_update :: () {
         }
 
         overlapping :: (a: Avatar, b: Avatar) -> bool {
-            return abs(a.position.x - b.position.x) < avatar_half_dim && abs(a.position.y - b.position.y) < avatar_half_dim;
+            return abs(a.position.x - b.position.x) < 2 * avatar_half_dim * (a.scale.x + b.scale.x) / 2.0 &&
+                abs(a.position.y - b.position.y) < 2 * avatar_half_dim * (a.scale.y + b.scale.y) / 2.0;
         }
 
         for other_index : it_index+1..avatars.count-1 {
